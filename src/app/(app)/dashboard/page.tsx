@@ -7,6 +7,7 @@ import { useTodayTasks, useTodayDeepWork, useStreak, useActiveCompetition, useSu
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import { DashboardSkeleton } from "@/components/shared/skeleton-page";
 import { getToday } from "@/lib/dates";
+import { calculateDailyPoints } from "@/lib/points";
 
 export default function DashboardPage() {
   const { user, profile, partner } = useAuth();
@@ -20,6 +21,7 @@ export default function DashboardPage() {
 
   if (tasksLoading || dwLoading || !user) return <DashboardSkeleton />;
 
+  const today = getToday();
   const myTasks = allTasks?.filter((t) => t.user_id === user.id) ?? [];
   const partnerTasks = allTasks?.filter((t) => t.user_id !== user.id) ?? [];
   const myDeepWork = allDeepWork?.filter((s) => s.user_id === user.id) ?? [];
@@ -28,10 +30,26 @@ export default function DashboardPage() {
   const myDeepWorkMinutes = myDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
   const partnerDeepWorkMinutes = partnerDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
 
-  const mySummaries = allSummaries?.filter((s) => s.user_id === user.id) ?? [];
-  const partnerSummaries = allSummaries?.filter((s) => s.user_id !== user.id) ?? [];
-  const myPoints = mySummaries.reduce((sum, s) => sum + s.points_earned, 0);
-  const partnerPoints = partnerSummaries.reduce((sum, s) => sum + s.points_earned, 0);
+  // Calculate today's points live (not from cron)
+  const streakActive = streak?.status === "active" && (streak?.current_count ?? 0) > 0;
+  const myTodayPoints = calculateDailyPoints({
+    tasksTotal: myTasks.length,
+    tasksCompleted: myTasks.filter((t) => t.completed).length,
+    deepWorkMinutes: myDeepWorkMinutes,
+    streakActive,
+  });
+  const partnerTodayPoints = calculateDailyPoints({
+    tasksTotal: partnerTasks.length,
+    tasksCompleted: partnerTasks.filter((t) => t.completed).length,
+    deepWorkMinutes: partnerDeepWorkMinutes,
+    streakActive,
+  });
+
+  // Historical points from past days (exclude today to avoid double-counting)
+  const mySummaries = allSummaries?.filter((s) => s.user_id === user.id && s.date !== today) ?? [];
+  const partnerSummaries = allSummaries?.filter((s) => s.user_id !== user.id && s.date !== today) ?? [];
+  const myPoints = mySummaries.reduce((sum, s) => sum + s.points_earned, 0) + myTodayPoints;
+  const partnerPoints = partnerSummaries.reduce((sum, s) => sum + s.points_earned, 0) + partnerTodayPoints;
 
   return (
     <DashboardView
@@ -46,7 +64,7 @@ export default function DashboardPage() {
       myPoints={myPoints}
       partnerPoints={partnerPoints}
       competition={competition ?? null}
-      today={getToday()}
+      today={today}
       partnerPresence={partnerStatus}
       partnerTimer={partnerTimer}
     />
