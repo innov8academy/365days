@@ -1,0 +1,65 @@
+"use client";
+
+import { useState } from "react";
+import { useSWRConfig } from "swr";
+import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Plus } from "lucide-react";
+import { toast } from "sonner";
+import type { DailyTask } from "@/types/database";
+
+interface TaskInputProps {
+  userId: string;
+  date: string;
+  onTaskAdded: (task: DailyTask) => void;
+}
+
+export function TaskInput({ userId, date, onTaskAdded }: TaskInputProps) {
+  const [title, setTitle] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { mutate } = useSWRConfig();
+  const supabase = createClient();
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("daily_tasks")
+        .insert({
+          user_id: userId,
+          date,
+          title: title.trim(),
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      onTaskAdded(data as DailyTask);
+      setTitle("");
+      mutate("today-tasks");
+      toast.success("Task added!");
+    } catch {
+      toast.error("Failed to add task");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex gap-2">
+      <Input
+        placeholder="What will you accomplish today?"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        className="flex-1"
+      />
+      <Button type="submit" size="icon" disabled={loading || !title.trim()}>
+        <Plus className="h-4 w-4" />
+      </Button>
+    </form>
+  );
+}
