@@ -110,6 +110,41 @@ function TimerRing({
   );
 }
 
+const TIMER_STORAGE_KEY = "365days-timer";
+
+interface TimerSavedState {
+  mode: TimerMode;
+  secondsLeft: number;
+  isRunning: boolean;
+  sessionsCompleted: number;
+  sessionStartTime: string | null;
+  savedAt: number; // Date.now()
+}
+
+function saveTimerState(state: TimerSavedState) {
+  try {
+    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(state));
+  } catch { /* ignore */ }
+}
+
+function loadTimerState(): TimerSavedState | null {
+  try {
+    const raw = localStorage.getItem(TIMER_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function getModeDurationStatic(m: TimerMode): number {
+  switch (m) {
+    case "work": return POMODORO_WORK_MINUTES * 60;
+    case "break": return POMODORO_BREAK_MINUTES * 60;
+    case "longBreak": return POMODORO_LONG_BREAK_MINUTES * 60;
+  }
+}
+
 export function TimerView({
   userId,
   me,
@@ -120,6 +155,8 @@ export function TimerView({
   onTimerUpdate,
   partnerTimer,
 }: TimerViewProps) {
+  // Restore timer state from localStorage
+  const [initialized, setInitialized] = useState(false);
   const [mode, setMode] = useState<TimerMode>("work");
   const [secondsLeft, setSecondsLeft] = useState(POMODORO_WORK_MINUTES * 60);
   const [isRunning, setIsRunning] = useState(false);
@@ -133,6 +170,49 @@ export function TimerView({
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const broadcastTickRef = useRef(0);
   const supabase = createClient();
+
+  // Restore from localStorage on mount
+  useEffect(() => {
+    const saved = loadTimerState();
+    if (saved) {
+      setMode(saved.mode);
+      setSessionsCompleted(saved.sessionsCompleted);
+
+      if (saved.isRunning) {
+        // Calculate elapsed time while page was closed
+        const elapsed = Math.floor((Date.now() - saved.savedAt) / 1000);
+        const remaining = saved.secondsLeft - elapsed;
+
+        if (remaining > 0) {
+          setSecondsLeft(remaining);
+          setIsRunning(true);
+          if (saved.sessionStartTime) {
+            setSessionStartTime(new Date(saved.sessionStartTime));
+          }
+        } else {
+          // Timer expired while page was closed — reset to mode duration
+          setSecondsLeft(getModeDurationStatic(saved.mode));
+          setIsRunning(false);
+        }
+      } else {
+        setSecondsLeft(saved.secondsLeft);
+      }
+    }
+    setInitialized(true);
+  }, []);
+
+  // Persist timer state whenever it changes
+  useEffect(() => {
+    if (!initialized) return;
+    saveTimerState({
+      mode,
+      secondsLeft,
+      isRunning,
+      sessionsCompleted,
+      sessionStartTime: sessionStartTime?.toISOString() ?? null,
+      savedAt: Date.now(),
+    });
+  }, [mode, secondsLeft, isRunning, sessionsCompleted, sessionStartTime, initialized]);
 
   const partnerMinutes = partnerDeepWork.reduce(
     (sum, s) => sum + s.duration_minutes,
