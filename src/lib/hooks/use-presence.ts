@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { PresenceStatus } from "@/components/shared/presence-indicator";
@@ -14,19 +14,10 @@ interface PresenceState {
 export function usePresence(userId: string | null, userName: string | null) {
   const [partnerStatus, setPartnerStatus] = useState<PresenceStatus>("offline");
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const supabase = createClient();
+  const supabaseRef = useRef(createClient());
 
-  useEffect(() => {
-    if (!userId || !userName) return;
-
-    const channel = supabase.channel("presence:app", {
-      config: { presence: { key: userId } },
-    });
-
-    channelRef.current = channel;
-
-    function updatePartnerStatus(state: Record<string, PresenceState[]>) {
-      // Find any presence entry that isn't the current user
+  const updatePartnerStatus = useCallback(
+    (state: Record<string, PresenceState[]>) => {
       const entries = Object.entries(state);
       for (const [key, presences] of entries) {
         if (key !== userId && presences.length > 0) {
@@ -35,12 +26,43 @@ export function usePresence(userId: string | null, userName: string | null) {
         }
       }
       setPartnerStatus("offline");
+    },
+    [userId]
+  );
+
+  useEffect(() => {
+    if (!userId || !userName) return;
+
+    const supabase = supabaseRef.current;
+
+    // Clean up any existing channel first
+    if (channelRef.current) {
+      channelRef.current.untrack();
+      supabase.removeChannel(channelRef.current);
     }
+
+    const channel = supabase.channel("presence:app", {
+      config: { presence: { key: userId } },
+    });
+
+    channelRef.current = channel;
 
     channel
       .on("presence", { event: "sync" }, () => {
         const state = channel.presenceState<PresenceState>();
         updatePartnerStatus(state);
+      })
+      .on("presence", { event: "join" }, ({ newPresences }) => {
+        const joined = newPresences as unknown as PresenceState[];
+        if (joined.some((p) => p.user_id !== userId)) {
+          setPartnerStatus(joined[0].status === "idle" ? "idle" : "online");
+        }
+      })
+      .on("presence", { event: "leave" }, ({ leftPresences }) => {
+        const left = leftPresences as unknown as PresenceState[];
+        if (left.some((p) => p.user_id !== userId)) {
+          setPartnerStatus("offline");
+        }
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
@@ -52,7 +74,6 @@ export function usePresence(userId: string | null, userName: string | null) {
         }
       });
 
-    // Idle detection via visibility change
     function handleVisibilityChange() {
       if (document.hidden) {
         channel.track({
@@ -75,8 +96,9 @@ export function usePresence(userId: string | null, userName: string | null) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       channel.untrack();
       supabase.removeChannel(channel);
+      channelRef.current = null;
     };
-  }, [userId, userName, supabase]);
+  }, [userId, userName, updatePartnerStatus]);
 
   return { partnerStatus };
 }
