@@ -18,6 +18,7 @@ export const metadata: Metadata = {
   description: "Couples accountability app — crush your goals together",
   manifest: "/manifest.json",
   icons: {
+    icon: "/favicon.png",
     apple: "/apple-touch-icon.png",
   },
   openGraph: {
