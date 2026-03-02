@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { PresenceStatus } from "@/components/shared/presence-indicator";
 
 interface PresenceState {
@@ -11,83 +10,58 @@ interface PresenceState {
   status: "online" | "idle";
 }
 
+const supabase = createClient();
+
 export function usePresence(userId: string | null, userName: string | null) {
   const [partnerStatus, setPartnerStatus] = useState<PresenceStatus>("offline");
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const supabaseRef = useRef(createClient());
+  const userIdRef = useRef(userId);
+  const userNameRef = useRef(userName);
 
-  const updatePartnerStatus = useCallback(
-    (state: Record<string, PresenceState[]>) => {
-      const entries = Object.entries(state);
-      for (const [key, presences] of entries) {
-        if (key !== userId && presences.length > 0) {
-          setPartnerStatus(presences[0].status === "idle" ? "idle" : "online");
-          return;
-        }
-      }
-      setPartnerStatus("offline");
-    },
-    [userId]
-  );
+  // Keep refs in sync without triggering effect re-runs
+  userIdRef.current = userId;
+  userNameRef.current = userName;
 
   useEffect(() => {
     if (!userId || !userName) return;
-
-    const supabase = supabaseRef.current;
-
-    // Clean up any existing channel first
-    if (channelRef.current) {
-      channelRef.current.untrack();
-      supabase.removeChannel(channelRef.current);
-    }
 
     const channel = supabase.channel("presence:app", {
       config: { presence: { key: userId } },
     });
 
-    channelRef.current = channel;
-
     channel
       .on("presence", { event: "sync" }, () => {
         const state = channel.presenceState<PresenceState>();
-        updatePartnerStatus(state);
-      })
-      .on("presence", { event: "join" }, ({ newPresences }) => {
-        const joined = newPresences as unknown as PresenceState[];
-        if (joined.some((p) => p.user_id !== userId)) {
-          setPartnerStatus(joined[0].status === "idle" ? "idle" : "online");
+        const entries = Object.entries(state);
+        let found = false;
+        for (const [key, presences] of entries) {
+          if (key !== userIdRef.current && presences.length > 0) {
+            setPartnerStatus(presences[0].status === "idle" ? "idle" : "online");
+            found = true;
+            break;
+          }
         }
-      })
-      .on("presence", { event: "leave" }, ({ leftPresences }) => {
-        const left = leftPresences as unknown as PresenceState[];
-        if (left.some((p) => p.user_id !== userId)) {
-          setPartnerStatus("offline");
-        }
+        if (!found) setPartnerStatus("offline");
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           await channel.track({
             user_id: userId,
             name: userName,
-            status: "online",
+            status: document.hidden ? "idle" : "online",
           } as PresenceState);
         }
       });
 
     function handleVisibilityChange() {
-      if (document.hidden) {
-        channel.track({
-          user_id: userId,
-          name: userName,
-          status: "idle",
-        } as PresenceState);
-      } else {
-        channel.track({
-          user_id: userId,
-          name: userName,
-          status: "online",
-        } as PresenceState);
-      }
+      const uid = userIdRef.current;
+      const uname = userNameRef.current;
+      if (!uid || !uname) return;
+
+      channel.track({
+        user_id: uid,
+        name: uname,
+        status: document.hidden ? "idle" : "online",
+      } as PresenceState);
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -96,9 +70,10 @@ export function usePresence(userId: string | null, userName: string | null) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       channel.untrack();
       supabase.removeChannel(channel);
-      channelRef.current = null;
     };
-  }, [userId, userName, updatePartnerStatus]);
+    // Only re-run when userId/userName go from null → value (once)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, userName]);
 
   return { partnerStatus };
 }
