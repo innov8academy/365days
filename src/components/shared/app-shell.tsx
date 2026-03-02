@@ -8,6 +8,7 @@ import { AppHeader, DesktopHeader } from "@/components/shared/app-header";
 import { BottomNav } from "@/components/shared/bottom-nav";
 import { SidebarNav } from "@/components/shared/sidebar-nav";
 import { FlameLogo } from "@/components/shared/flame-logo";
+import { useRealtimeSync } from "@/lib/hooks/use-data";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, profile, partner, loading } = useAuth();
@@ -16,6 +17,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     profile?.name ?? null
   );
   const router = useRouter();
+  useRealtimeSync();
 
   useEffect(() => {
     if (!loading && !user) {

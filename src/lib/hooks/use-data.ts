@@ -1,6 +1,7 @@
 "use client";
 
-import useSWR from "swr";
+import { useEffect } from "react";
+import useSWR, { mutate } from "swr";
 import { createClient } from "@/lib/supabase/client";
 import { getToday } from "@/lib/dates";
 
@@ -92,4 +93,38 @@ export function useSummaries() {
 
 export function useBreaks() {
   return useSWR("breaks", fetchBreaks, swrOptions);
+}
+
+// Real-time subscription: auto-revalidate SWR caches when DB changes
+export function useRealtimeSync() {
+  useEffect(() => {
+    const channel = supabase
+      .channel("db-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "daily_tasks" },
+        () => {
+          mutate("today-tasks");
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "deep_work_sessions" },
+        () => {
+          mutate("today-deepwork");
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "daily_summaries" },
+        () => {
+          mutate("summaries");
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 }
