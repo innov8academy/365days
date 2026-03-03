@@ -11,9 +11,10 @@ interface HeaderProps {
   userName?: string;
   partnerName?: string;
   partnerPresence?: PresenceStatus;
+  partnerLastSeen?: string | null;
 }
 
-export function AppHeader({ userName, partnerName, partnerPresence = "offline" }: HeaderProps) {
+export function AppHeader({ userName, partnerName, partnerPresence = "offline", partnerLastSeen }: HeaderProps) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -37,7 +38,7 @@ export function AppHeader({ userName, partnerName, partnerPresence = "offline" }
           <div className="flex items-center gap-2">
             {/* Partner presence chip */}
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/[0.06] border border-white/[0.08]">
-              <PresenceIndicator status={partnerPresence} size="sm" />
+              <PresenceIndicator status={partnerPresence} lastSeen={partnerLastSeen} size="sm" />
               <span className="text-xs text-muted-foreground/80">
                 {partnerName ?? "Partner"}
               </span>

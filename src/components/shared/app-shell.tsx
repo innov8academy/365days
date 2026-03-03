@@ -12,7 +12,7 @@ import { useRealtimeSync } from "@/lib/hooks/use-data";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, profile, partner, loading } = useAuth();
-  const { partnerStatus } = usePresence(
+  const { partnerStatus, partnerLastSeen } = usePresence(
     user?.id ?? null,
     profile?.name ?? null
   );
@@ -55,11 +55,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         userName={profile?.name}
         partnerName={partner?.name}
         partnerPresence={partnerStatus}
+        partnerLastSeen={partnerLastSeen}
       />
       <BottomNav />
       <SidebarNav
         partnerName={partner?.name}
         partnerPresence={partnerStatus}
+        partnerLastSeen={partnerLastSeen}
       />
       <div className="lg:pl-60">
         <DesktopHeader userName={profile?.name} />

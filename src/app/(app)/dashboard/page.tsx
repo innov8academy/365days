@@ -11,7 +11,7 @@ import { calculateDailyPoints } from "@/lib/points";
 
 export default function DashboardPage() {
   const { user, profile, partner } = useAuth();
-  const { partnerStatus } = usePresence(user?.id ?? null, profile?.name ?? null);
+  const { partnerStatus, partnerLastSeen } = usePresence(user?.id ?? null, profile?.name ?? null);
   const { partnerTimer } = useTimerBroadcast(user?.id ?? null);
   const { data: allTasks, isLoading: tasksLoading } = useTodayTasks();
   const { data: allDeepWork, isLoading: dwLoading } = useTodayDeepWork();
@@ -66,6 +66,7 @@ export default function DashboardPage() {
       competition={competition ?? null}
       today={today}
       partnerPresence={partnerStatus}
+      partnerLastSeen={partnerLastSeen}
       partnerTimer={partnerTimer}
     />
   );

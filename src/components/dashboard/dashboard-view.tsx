@@ -35,6 +35,7 @@ interface DashboardViewProps {
   competition: Competition | null;
   today: string;
   partnerPresence?: PresenceStatus;
+  partnerLastSeen?: string | null;
   partnerTimer?: { mode: string; secondsLeft: number; isRunning: boolean } | null;
 }
 
@@ -50,6 +51,7 @@ export function DashboardView({
   partnerPoints,
   competition,
   partnerPresence = "offline",
+  partnerLastSeen,
   partnerTimer,
 }: DashboardViewProps) {
   const myCompleted = myTasks.filter((t) => t.completed).length;
@@ -170,7 +172,7 @@ export function DashboardView({
                 <span className="text-sm font-medium">
                   {partner?.name ?? "Partner"}
                 </span>
-                <PresenceIndicator status={partnerPresence} size="sm" />
+                <PresenceIndicator status={partnerPresence} lastSeen={partnerLastSeen} size="sm" />
                 {partnerTotal > 0 && partnerCompleted === partnerTotal ? (
                   <CheckCircle2 className="h-4 w-4 text-success" />
                 ) : partnerTotal > 0 ? (

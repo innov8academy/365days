@@ -27,11 +27,13 @@ const navItems = [
 interface SidebarNavProps {
   partnerName?: string;
   partnerPresence?: PresenceStatus;
+  partnerLastSeen?: string | null;
 }
 
 export function SidebarNav({
   partnerName,
   partnerPresence = "offline",
+  partnerLastSeen,
 }: SidebarNavProps) {
   const pathname = usePathname();
 
@@ -88,7 +90,7 @@ export function SidebarNav({
             <div className="text-sm font-medium truncate">
               {partnerName ?? "Partner"}
             </div>
-            <PresenceIndicator status={partnerPresence} showLabel size="sm" />
+            <PresenceIndicator status={partnerPresence} showLabel lastSeen={partnerLastSeen} size="sm" />
           </div>
         </div>
       </div>
