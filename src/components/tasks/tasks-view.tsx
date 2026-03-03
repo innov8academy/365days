@@ -68,7 +68,7 @@ export function TasksView({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold lg:text-2xl tracking-tight">Today&apos;s Tasks</h1>
+        <h1 className="font-display text-xl font-extrabold lg:text-2xl tracking-tight">Today&apos;s Tasks</h1>
         <div className="flex items-center gap-2">{statusBadge}</div>
       </div>
 

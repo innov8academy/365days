@@ -86,7 +86,7 @@ export function StreakView({
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold tracking-tight">Streak</h1>
+      <h1 className="font-display text-xl font-extrabold tracking-tight">Streak</h1>
 
       {/* Main Streak Card */}
       <Card
@@ -119,7 +119,7 @@ export function StreakView({
               )}
             />
           </div>
-          <div className="text-5xl font-bold tracking-tight">
+          <div className="font-display text-6xl font-extrabold tracking-tight drop-shadow-[0_0_20px_var(--flame-glow)]">
             <AnimatedCounter value={currentStreak} />
           </div>
           <div className="text-muted-foreground/60">

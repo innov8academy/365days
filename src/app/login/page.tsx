@@ -49,27 +49,32 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden">
-      {/* Animated gradient background */}
-      <div className="fixed inset-0 bg-background" />
-      <div className="fixed inset-0">
-        <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-flame/[0.07] blur-[120px] animate-gradient" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] rounded-full bg-partner/[0.06] blur-[120px] animate-gradient" style={{ animationDelay: "3s" }} />
-        <div className="absolute top-[40%] right-[20%] w-[300px] h-[300px] rounded-full bg-primary/[0.04] blur-[80px] animate-float" />
+    <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden noise">
+      {/* Background */}
+      <div className="fixed inset-0 bg-[#0c0a09]" />
+
+      {/* Dramatic orbs */}
+      <div className="fixed inset-0 overflow-hidden">
+        <div className="absolute top-[-30%] left-[-15%] w-[800px] h-[800px] rounded-full bg-flame/[0.08] blur-[200px] animate-gradient" />
+        <div className="absolute bottom-[-30%] right-[-15%] w-[700px] h-[700px] rounded-full bg-partner/[0.06] blur-[180px] animate-gradient" style={{ animationDelay: "4s" }} />
+        <div className="absolute top-[30%] right-[10%] w-[400px] h-[400px] rounded-full bg-amber-500/[0.04] blur-[120px] animate-float" />
       </div>
 
       {/* Login card */}
-      <div className="relative w-full max-w-md animate-slide-up">
-        <div className="rounded-3xl border border-white/[0.08] bg-white/[0.05] backdrop-blur-2xl p-8 shadow-2xl">
-          {/* Logo area */}
+      <div className="relative w-full max-w-sm animate-slide-up">
+        <div className="rounded-3xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl p-8 shadow-[0_0_60px_-12px_rgba(249,115,22,0.15)]">
+          {/* Logo */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-flame/20 to-orange-500/10 border border-flame/20 mb-4">
-              <Image src="/logo.png" alt="365 Days" width={40} height={40} className="rounded-lg" />
+            <div className="relative inline-block">
+              <div className="absolute inset-0 bg-flame/30 rounded-2xl blur-2xl scale-150" />
+              <div className="relative inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-flame/20 to-orange-600/10 border border-flame/20">
+                <Image src="/logo.png" alt="365 Days" width={48} height={48} className="rounded-xl" />
+              </div>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">
+            <h1 className="font-display text-2xl font-extrabold mt-5 tracking-tight">
               {isSignUp ? "Create Account" : "Welcome Back"}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1.5">
+            <p className="text-sm text-stone-500 mt-1.5">
               {isSignUp
                 ? "Join your accountability partner"
                 : "Let's crush today's goals"}
@@ -79,7 +84,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</Label>
+                <Label htmlFor="name" className="text-[11px] font-bold text-stone-500 uppercase tracking-[0.12em]">Name</Label>
                 <Input
                   id="name"
                   type="text"
@@ -87,12 +92,12 @@ export default function LoginPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required={isSignUp}
-                  className="h-11 rounded-xl bg-white/[0.06] border-white/[0.1] focus:border-flame/40 focus:ring-flame/20 transition-all placeholder:text-muted-foreground/50"
+                  className="h-12 rounded-xl bg-white/[0.04] border-white/[0.08] focus:border-flame/40 focus:ring-flame/20 text-sm placeholder:text-stone-600"
                 />
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</Label>
+              <Label htmlFor="email" className="text-[11px] font-bold text-stone-500 uppercase tracking-[0.12em]">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -100,11 +105,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="h-11 rounded-xl bg-white/[0.06] border-white/[0.1] focus:border-flame/40 focus:ring-flame/20 transition-all placeholder:text-muted-foreground/50"
+                className="h-12 rounded-xl bg-white/[0.04] border-white/[0.08] focus:border-flame/40 focus:ring-flame/20 text-sm placeholder:text-stone-600"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Password</Label>
+              <Label htmlFor="password" className="text-[11px] font-bold text-stone-500 uppercase tracking-[0.12em]">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -113,12 +118,12 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
-                className="h-11 rounded-xl bg-white/[0.06] border-white/[0.1] focus:border-flame/40 focus:ring-flame/20 transition-all placeholder:text-muted-foreground/50"
+                className="h-12 rounded-xl bg-white/[0.04] border-white/[0.08] focus:border-flame/40 focus:ring-flame/20 text-sm placeholder:text-stone-600"
               />
             </div>
             <Button
               type="submit"
-              className="w-full h-11 rounded-xl bg-gradient-to-r from-flame to-orange-500 text-white font-medium shadow-lg shadow-flame/20 hover:shadow-flame/30 hover:brightness-110 transition-all"
+              className="w-full h-12 rounded-xl bg-gradient-to-r from-flame via-orange-500 to-amber-500 text-white font-bold text-sm shadow-[0_0_24px_-4px_rgba(249,115,22,0.5)] hover:shadow-[0_0_32px_-4px_rgba(249,115,22,0.6)] hover:brightness-110 transition-all"
               disabled={loading}
             >
               {loading ? (
@@ -134,21 +139,20 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
+          <div className="mt-6 text-center text-sm text-stone-500">
             {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
             <button
               onClick={() => setIsSignUp(!isSignUp)}
-              className="text-flame hover:text-flame/80 font-medium transition-colors"
+              className="text-flame hover:text-amber-400 font-semibold transition-colors"
             >
               {isSignUp ? "Sign In" : "Sign Up"}
             </button>
           </div>
         </div>
 
-        {/* Bottom accent text */}
-        <div className="text-center mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground/50">
-          <Flame className="h-3 w-3 text-flame/50" />
-          <span>365 Days of Accountability</span>
+        <div className="text-center mt-8 flex items-center justify-center gap-2 text-xs text-stone-700">
+          <Flame className="h-3 w-3 text-flame/60" />
+          <span className="font-medium tracking-wide">365 Days of Accountability</span>
         </div>
       </div>
     </div>

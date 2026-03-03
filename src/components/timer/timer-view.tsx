@@ -368,7 +368,7 @@ export function TimerView({
 
   return (
     <div className="space-y-4 lg:space-y-6">
-      <h1 className="text-xl font-bold lg:text-2xl tracking-tight">Deep Work Timer</h1>
+      <h1 className="font-display text-xl font-extrabold lg:text-2xl tracking-tight">Deep Work Timer</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         {/* Timer Card */}

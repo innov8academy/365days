@@ -85,7 +85,7 @@ export function TaskList({
 
   if (tasks.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] py-8 text-center text-muted-foreground/60 text-sm">
+      <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] py-8 text-center text-stone-600 text-sm">
         No tasks yet. Add your first task above!
       </div>
     );
@@ -93,25 +93,26 @@ export function TaskList({
 
   return (
     <div className="space-y-2">
-      {tasks.map((task) => (
+      {tasks.map((task, i) => (
         <div
           key={task.id}
           className={cn(
-            "group flex items-center gap-3 py-3 px-4 rounded-xl border border-white/[0.06] bg-white/[0.03] transition-all duration-300 hover:bg-white/[0.05] hover:border-white/[0.1]",
-            task.completed && "opacity-50",
+            "group flex items-center gap-3 py-3 px-4 rounded-xl border border-white/[0.05] bg-white/[0.02] transition-all duration-300 hover:bg-white/[0.04] hover:border-white/[0.1] animate-slide-in",
+            task.completed && "opacity-40",
             animatingId === task.id && "animate-check-pop"
           )}
+          style={{ animationDelay: `${i * 30}ms` }}
         >
           <Checkbox
             checked={task.completed}
             onCheckedChange={() => toggleTask(task)}
             disabled={!isOwner}
-            className="shrink-0 rounded-md data-[state=checked]:bg-success data-[state=checked]:border-success"
+            className="shrink-0 rounded-md border-stone-600 data-[state=checked]:bg-success data-[state=checked]:border-success data-[state=checked]:shadow-[0_0_8px_-2px_rgba(34,197,94,0.5)]"
           />
           <span
             className={cn(
               "flex-1 text-sm transition-all duration-300",
-              task.completed && "line-through text-muted-foreground/60"
+              task.completed && "line-through text-stone-600"
             )}
           >
             {task.title}
@@ -120,7 +121,7 @@ export function TaskList({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
+              className="h-7 w-7 shrink-0 rounded-lg text-stone-700 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
               onClick={() => deleteTask(task.id)}
             >
               <Trash2 className="h-3.5 w-3.5" />

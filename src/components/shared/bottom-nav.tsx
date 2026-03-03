@@ -24,8 +24,8 @@ export function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden">
-      <div className="mx-auto max-w-lg px-4 pb-[env(safe-area-inset-bottom)]">
-        <div className="flex items-center justify-around h-16 rounded-2xl mb-2 border border-white/[0.08] bg-white/[0.04] backdrop-blur-2xl shadow-lg shadow-black/20">
+      <div className="mx-auto max-w-lg px-3 pb-[max(env(safe-area-inset-bottom),8px)]">
+        <div className="flex items-center justify-around h-[64px] rounded-2xl border border-white/[0.06] bg-[#0f0d0c]/90 backdrop-blur-2xl shadow-[0_-4px_30px_-4px_rgba(0,0,0,0.6)]">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -33,23 +33,22 @@ export function BottomNav() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "relative flex flex-col items-center gap-0.5 px-4 py-2 text-[10px] font-medium transition-all duration-300",
+                  "relative flex flex-col items-center gap-[2px] px-4 py-2 text-[10px] font-semibold transition-all duration-300",
                   isActive
                     ? "text-flame"
-                    : "text-muted-foreground/70 hover:text-foreground/80"
+                    : "text-stone-500 active:text-stone-300"
                 )}
               >
-                {/* Active pill background */}
                 {isActive && (
-                  <div className="absolute inset-0 mx-1 rounded-xl bg-flame/[0.1] border border-flame/[0.15]" />
+                  <div className="absolute inset-1 rounded-xl bg-flame/[0.08] border border-flame/[0.12]" />
                 )}
                 <item.icon
                   className={cn(
                     "relative h-5 w-5 transition-all duration-300",
-                    isActive && "scale-110 drop-shadow-[0_0_6px_var(--flame-glow)]"
+                    isActive && "scale-110 drop-shadow-[0_0_8px_var(--flame-glow)]"
                   )}
                 />
-                <span className="relative">{item.label}</span>
+                <span className="relative tracking-wide">{item.label}</span>
               </Link>
             );
           })}

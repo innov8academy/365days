@@ -27,13 +27,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-3">
+      <div className="min-h-screen flex items-center justify-center bg-background noise">
+        <div className="text-center space-y-4 animate-slide-up">
           <div className="relative">
-            <div className="absolute inset-0 bg-flame/20 rounded-full blur-2xl scale-150" />
-            <FlameLogo animate className="relative h-16 w-16 mx-auto" />
+            <div className="absolute inset-0 bg-flame/30 rounded-full blur-3xl scale-[2]" />
+            <FlameLogo animate className="relative h-20 w-20 mx-auto drop-shadow-[0_0_20px_var(--flame-glow)]" />
           </div>
-          <div className="text-sm text-muted-foreground/50">
+          <div className="text-sm text-muted-foreground font-medium tracking-wide">
             Loading...
           </div>
         </div>
@@ -44,11 +44,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   return (
-    <div className="relative min-h-screen">
-      {/* Ambient background glow */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full bg-flame/[0.03] blur-[150px]" />
-        <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] rounded-full bg-partner/[0.03] blur-[120px]" />
+    <div className="relative min-h-screen noise">
+      {/* Rich ambient background orbs */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-[200px] -left-[100px] w-[700px] h-[700px] rounded-full bg-flame/[0.05] blur-[180px] animate-gradient" />
+        <div className="absolute -bottom-[200px] -right-[100px] w-[600px] h-[600px] rounded-full bg-partner/[0.04] blur-[160px] animate-gradient" style={{ animationDelay: "4s" }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] rounded-full bg-amber-500/[0.02] blur-[200px]" />
       </div>
 
       <AppHeader
@@ -63,9 +64,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         partnerPresence={partnerStatus}
         partnerLastSeen={partnerLastSeen}
       />
-      <div className="lg:pl-60">
+      <div className="lg:pl-64">
         <DesktopHeader userName={profile?.name} />
-        <main className="relative mx-auto px-4 py-4 pb-24 lg:pb-8 lg:px-8 max-w-5xl">
+        <main className="relative mx-auto px-4 py-6 pb-28 lg:pb-10 lg:px-8 max-w-5xl">
           {children}
         </main>
       </div>

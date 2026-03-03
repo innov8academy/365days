@@ -14,17 +14,17 @@ function Progress({
   variant?: "default" | "flame" | "success" | "partner"
 }) {
   const variantClasses = {
-    default: "bg-primary",
-    flame: "bg-gradient-to-r from-amber-500 to-orange-500",
-    success: "bg-gradient-to-r from-emerald-500 to-green-500",
-    partner: "bg-gradient-to-r from-violet-500 to-purple-500",
+    default: "bg-primary shadow-[0_0_12px_-2px_rgba(251,146,60,0.5)]",
+    flame: "bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500 shadow-[0_0_14px_-2px_rgba(249,115,22,0.6)]",
+    success: "bg-gradient-to-r from-emerald-500 to-green-400 shadow-[0_0_14px_-2px_rgba(34,197,94,0.5)]",
+    partner: "bg-gradient-to-r from-violet-500 to-purple-400 shadow-[0_0_14px_-2px_rgba(167,139,250,0.5)]",
   }
 
   return (
     <ProgressPrimitive.Root
       data-slot="progress"
       className={cn(
-        "relative h-2 w-full overflow-hidden rounded-full bg-white/[0.08]",
+        "relative h-2.5 w-full overflow-hidden rounded-full",
         className
       )}
       {...props}

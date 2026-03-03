@@ -84,7 +84,7 @@ export function LeaderboardView({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight">Leaderboard</h1>
+        <h1 className="font-display text-xl font-extrabold tracking-tight">Leaderboard</h1>
         {!competition && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
