@@ -51,6 +51,7 @@ export function BreaksView({
   const [days, setDays] = useState("1");
   const [reason, setReason] = useState("");
   const [creating, setCreating] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const supabase = createClient();
 
   const maxDays =
@@ -413,29 +414,36 @@ export function BreaksView({
         </CardContent>
       </Card>
 
-      {/* Break Rules */}
+      {/* Break Rules (collapsible) */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Break Rules</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Break Rules</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => setShowRules(!showRules)} className="text-xs text-muted-foreground hover:text-foreground rounded-lg">
+              {showRules ? "Hide Rules" : "Show Rules"}
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm text-muted-foreground/60">
-          <p>
-            <strong className="text-foreground/90">Mutual:</strong> Both agree.
-            Streak paused for both. 1-3 days.
-          </p>
-          <p>
-            <strong className="text-foreground/90">Emergency:</strong> No approval
-            needed. Streak paused. 1-7 days. Max 2/month.
-          </p>
-          <p>
-            <strong className="text-foreground/90">Solo Pause:</strong> 1 day only.
-            Partner&apos;s streak continues. 0 points. Max 2/month.
-          </p>
-          <p className="text-xs text-muted-foreground/40">
-            Break days don&apos;t count toward the 30-day competition (cycle
-            extends).
-          </p>
-        </CardContent>
+        {showRules && (
+          <CardContent className="space-y-3 text-sm text-muted-foreground/60">
+            <p>
+              <strong className="text-foreground/90">Mutual:</strong> Both agree.
+              Streak paused for both. 1-3 days.
+            </p>
+            <p>
+              <strong className="text-foreground/90">Emergency:</strong> No approval
+              needed. Streak paused. 1-7 days. Max 2/month.
+            </p>
+            <p>
+              <strong className="text-foreground/90">Solo Pause:</strong> 1 day only.
+              Partner&apos;s streak continues. 0 points. Max 2/month.
+            </p>
+            <p className="text-xs text-muted-foreground/40">
+              Break days don&apos;t count toward the 30-day competition (cycle
+              extends).
+            </p>
+          </CardContent>
+        )}
       </Card>
     </div>
   );

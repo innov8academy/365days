@@ -12,7 +12,7 @@ import {
   Flame,
   ListTodo,
   Timer,
-  Trophy,
+  Users,
   ArrowRight,
   CheckCircle2,
   XCircle,
@@ -70,8 +70,22 @@ export function DashboardView({
 
   const isPartnerFocusing = partnerTimer?.isRunning && partnerTimer.mode === "work";
 
+  // IST-based greeting
+  const istHour = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCHours();
+  const greeting = istHour < 12
+    ? `Good morning, ${me?.name ?? "You"} ☀️`
+    : istHour < 17
+      ? `Keep pushing, ${me?.name ?? "You"} 💪`
+      : istHour < 21
+        ? `Evening grind, ${me?.name ?? "You"} 🔥`
+        : `Wind down, ${me?.name ?? "You"} 🌙`;
+
   return (
     <div className="space-y-5 lg:space-y-6">
+      {/* Greeting */}
+      <h2 className="font-display text-xl lg:text-2xl font-bold tracking-tight animate-slide-in">
+        {greeting}
+      </h2>
       {/* HERO: Streak Card */}
       <Link href="/streak" className="block group">
         <div className="relative rounded-2xl overflow-hidden animate-slide-up glow-flame">
@@ -257,63 +271,34 @@ export function DashboardView({
           </CardContent>
         </Card>
 
-        {/* Competition */}
+        {/* Player Status */}
         <Card className="lg:col-span-2 animate-slide-up" style={{ animationDelay: "200ms" }}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-[15px] flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-xl bg-amber-400/[0.1] border border-amber-400/[0.15] flex items-center justify-center">
-                  <Trophy className="h-4 w-4 text-amber-400" />
+          <CardContent className="py-5">
+            <div className="flex items-center justify-around">
+              <div className="flex flex-col items-center gap-2">
+                <div className="h-12 w-12 rounded-xl bg-flame/[0.12] border border-flame/[0.2] flex items-center justify-center text-lg font-bold text-flame">
+                  {me?.name?.charAt(0).toUpperCase() ?? "Y"}
                 </div>
-                Competition
-              </CardTitle>
-              <Link href="/leaderboard">
-                <Button variant="ghost" size="sm" className="text-stone-500 hover:text-flame rounded-lg text-xs font-semibold">
-                  Details <ArrowRight className="ml-1 h-3 w-3" />
-                </Button>
-              </Link>
+                <span className="text-xs font-semibold">{me?.name ?? "You"}</span>
+                <div className="text-xs text-muted-foreground space-y-0.5 text-center">
+                  <div>{myCompleted}/{myTotal} tasks</div>
+                  <div>{formatMinutesToHours(myDeepWorkMinutes)} deep work</div>
+                </div>
+              </div>
+              <div className="px-4 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06]">
+                <span className="text-xs font-bold text-stone-600 uppercase tracking-[0.2em]">VS</span>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="h-12 w-12 rounded-xl bg-partner/[0.12] border border-partner/[0.2] flex items-center justify-center text-lg font-bold text-partner">
+                  {partner?.name?.charAt(0).toUpperCase() ?? "P"}
+                </div>
+                <span className="text-xs font-semibold">{partner?.name ?? "Partner"}</span>
+                <div className="text-xs text-muted-foreground space-y-0.5 text-center">
+                  <div>{partnerCompleted}/{partnerTotal} tasks</div>
+                  <div>{formatMinutesToHours(partnerDeepWorkMinutes)} deep work</div>
+                </div>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent>
-            {competition ? (
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-around gap-6 py-2">
-                <div className="flex items-center justify-between sm:flex-col sm:text-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-stone-500">{me?.name ?? "You"}</span>
-                  <span className="font-display text-3xl font-extrabold text-primary drop-shadow-[0_0_8px_rgba(251,146,60,0.3)]">
-                    <AnimatedCounter value={myPoints} />
-                  </span>
-                </div>
-                <div className="hidden sm:flex items-center justify-center">
-                  <div className="px-4 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06]">
-                    <span className="text-xs font-bold text-stone-600 uppercase tracking-[0.2em]">VS</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between sm:flex-col sm:text-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-stone-500">
-                    {partner?.name ?? "Partner"}
-                  </span>
-                  <span className="font-display text-3xl font-extrabold text-partner drop-shadow-[0_0_8px_rgba(167,139,250,0.3)]">
-                    <AnimatedCounter value={partnerPoints} />
-                  </span>
-                </div>
-                <div className="text-center sm:text-right sm:pl-4 sm:border-l sm:border-white/[0.06]">
-                  <div className="text-[10px] uppercase tracking-[0.15em] text-stone-600 font-bold mb-1">Pool</div>
-                  <div className="font-display text-xl font-extrabold bg-gradient-to-r from-amber-400 via-orange-400 to-flame bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(251,191,36,0.2)]">
-                    ₹{competition.pool_amount.toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center text-sm text-stone-500 py-3">
-                No active competition.{" "}
-                <Link
-                  href="/leaderboard"
-                  className="text-flame hover:text-flame/80 font-semibold transition-colors"
-                >
-                  Start one
-                </Link>
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>

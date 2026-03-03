@@ -45,7 +45,8 @@ export function BottomNav() {
                 <item.icon
                   className={cn(
                     "relative h-5 w-5 transition-all duration-300",
-                    isActive && "scale-110 drop-shadow-[0_0_8px_var(--flame-glow)]"
+                    isActive && "scale-110 drop-shadow-[0_0_8px_var(--flame-glow)]",
+                    item.href === "/timer" && !isActive && "scale-110 drop-shadow-[0_0_8px_var(--flame-glow)]"
                   )}
                 />
                 <span className="relative tracking-wide">{item.label}</span>

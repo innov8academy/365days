@@ -72,12 +72,12 @@ export default function LoginPage() {
               </div>
             </div>
             <h1 className="font-display text-2xl font-extrabold mt-5 tracking-tight">
-              {isSignUp ? "Create Account" : "Welcome Back"}
+              {isSignUp ? "Create Account" : "Welcome Back ❤️‍🔥"}
             </h1>
             <p className="text-sm text-stone-500 mt-1.5">
               {isSignUp
                 ? "Join your accountability partner"
-                : "Let's crush today's goals"}
+                : "Alex & Siva's 365"}
             </p>
           </div>
 
