@@ -123,17 +123,12 @@ create policy "Users can insert own sessions" on public.deep_work_sessions
 create policy "Users can update own sessions" on public.deep_work_sessions
   for update using (auth.uid() = user_id);
 
--- Daily summaries: both can see
+-- Daily summaries: clients can only read (cron writes via service role)
 create policy "Users can view all summaries" on public.daily_summaries
   for select using (true);
 
-create policy "Users can insert own summaries" on public.daily_summaries
-  for insert with check (auth.uid() = user_id);
-
-create policy "Users can update own summaries" on public.daily_summaries
-  for update using (auth.uid() = user_id);
-
--- Streaks: both can see and update
+-- Streaks: clients can only read and update (2-user app, both trusted)
+-- Cron uses service role for streak updates; admin reset also uses client update
 create policy "Users can view streaks" on public.streaks
   for select using (true);
 
@@ -143,7 +138,7 @@ create policy "Users can update streaks" on public.streaks
 create policy "Users can insert streaks" on public.streaks
   for insert with check (true);
 
--- Competitions: both can see and manage
+-- Competitions: both users can see and manage (2-user app, both trusted)
 create policy "Users can view competitions" on public.competitions
   for select using (true);
 
@@ -153,7 +148,7 @@ create policy "Users can insert competitions" on public.competitions
 create policy "Users can update competitions" on public.competitions
   for update using (true);
 
--- Breaks: both can see and manage
+-- Breaks: both can see; only own user can create; partner approves via update
 create policy "Users can view breaks" on public.breaks
   for select using (true);
 
@@ -190,3 +185,12 @@ create index idx_daily_tasks_user_date on public.daily_tasks(user_id, date);
 create index idx_deep_work_sessions_user_date on public.deep_work_sessions(user_id, date);
 create index idx_daily_summaries_user_date on public.daily_summaries(user_id, date);
 create index idx_breaks_dates on public.breaks(start_date, end_date);
+
+-- MIGRATION: Run this in Supabase SQL Editor to tighten RLS policies
+-- Removes client INSERT/UPDATE on daily_summaries (only cron/service role should write)
+--
+-- drop policy if exists "Users can insert own summaries" on public.daily_summaries;
+-- drop policy if exists "Users can update own summaries" on public.daily_summaries;
+--
+-- Optional: add task title length constraint
+-- ALTER TABLE public.daily_tasks ADD CONSTRAINT daily_tasks_title_length CHECK (char_length(title) <= 200);

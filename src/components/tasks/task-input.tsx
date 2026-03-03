@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
+import { TASK_TITLE_MAX_LENGTH } from "@/lib/constants";
 import type { DailyTask } from "@/types/database";
 
 interface TaskInputProps {
@@ -23,7 +24,12 @@ export function TaskInput({ userId, date, onTaskAdded }: TaskInputProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    if (trimmed.length > TASK_TITLE_MAX_LENGTH) {
+      toast.error(`Task title must be ${TASK_TITLE_MAX_LENGTH} characters or less`);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -32,7 +38,7 @@ export function TaskInput({ userId, date, onTaskAdded }: TaskInputProps) {
         .insert({
           user_id: userId,
           date,
-          title: title.trim(),
+          title: trimmed,
         })
         .select()
         .single();
@@ -55,6 +61,7 @@ export function TaskInput({ userId, date, onTaskAdded }: TaskInputProps) {
         placeholder="What will you accomplish today?"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
+        maxLength={TASK_TITLE_MAX_LENGTH}
         className="flex-1"
       />
       <Button type="submit" size="icon" disabled={loading || !title.trim()}>

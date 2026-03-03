@@ -1,211 +1,36 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import {
-  POINTS_FULL_COMPLETION,
-  POINTS_NO_TASKS_PENALTY,
-  POINTS_DEEP_WORK_BONUS,
-  POINTS_DEEP_WORK_BONUS_THRESHOLD,
-  POINTS_STREAK_BONUS,
-  DEEP_WORK_DAILY_TARGET,
-  DEEP_WORK_RECOVERY_TARGET,
-  STREAK_RECOVERY_DAYS,
-} from "@/lib/constants";
-
-// This endpoint should be called at the end of each day (via Vercel Cron or manual trigger)
-// It calculates daily summaries, points, and updates the streak
+import { runDailySummary } from "@/lib/cron/daily-summary";
 
 export async function GET(request: Request) {
-  // Simple auth check via query param (for cron jobs)
+  // Validate CRON_SECRET is configured
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error("[cron/daily-summary] CRON_SECRET environment variable is not set");
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500 }
+    );
+  }
+
+  // Check secret from query params (Vercel cron) or Authorization header
   const { searchParams } = new URL(request.url);
-  const secret = searchParams.get("secret");
-  if (secret !== process.env.CRON_SECRET && process.env.CRON_SECRET) {
+  const querySecret = searchParams.get("secret");
+  const authHeader = request.headers.get("authorization");
+  const headerSecret = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : null;
+
+  if (querySecret !== cronSecret && headerSecret !== cronSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Use service role for admin operations
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
-  const today = new Date().toISOString().split("T")[0];
-
   try {
-    // Get all users
-    const { data: profiles } = await supabase.from("profiles").select("id");
-    if (!profiles || profiles.length === 0) {
-      return NextResponse.json({ message: "No users found" });
-    }
-
-    // Get streak
-    const { data: streak } = await supabase
-      .from("streaks")
-      .select("*")
-      .limit(1)
-      .single();
-
-    // Check for active breaks
-    const { data: activeBreaks } = await supabase
-      .from("breaks")
-      .select("*")
-      .eq("approved", true)
-      .lte("start_date", today)
-      .gte("end_date", today);
-
-    const isBreakDay = activeBreaks && activeBreaks.length > 0;
-
-    const results = [];
-    const userDeepWorkStatus: Record<string, boolean> = {};
-
-    for (const profile of profiles) {
-      // Get tasks for today
-      const { data: tasks } = await supabase
-        .from("daily_tasks")
-        .select("*")
-        .eq("user_id", profile.id)
-        .eq("date", today);
-
-      // Get deep work sessions for today
-      const { data: sessions } = await supabase
-        .from("deep_work_sessions")
-        .select("*")
-        .eq("user_id", profile.id)
-        .eq("date", today);
-
-      const tasksTotal = tasks?.length ?? 0;
-      const tasksCompleted = tasks?.filter((t) => t.completed).length ?? 0;
-      const deepWorkMinutes =
-        sessions?.reduce((sum, s) => sum + s.duration_minutes, 0) ?? 0;
-
-      // Calculate points (all-or-nothing)
-      let points = 0;
-      if (tasksTotal === 0) {
-        points += POINTS_NO_TASKS_PENALTY;
-      } else if (tasksCompleted === tasksTotal) {
-        points += POINTS_FULL_COMPLETION;
-      }
-      // else: 0 points for incomplete
-
-      // Deep work bonus
-      if (deepWorkMinutes >= POINTS_DEEP_WORK_BONUS_THRESHOLD) {
-        points += POINTS_DEEP_WORK_BONUS;
-      }
-
-      // Streak bonus
-      if (streak?.status === "active" && streak.current_count > 0) {
-        points += POINTS_STREAK_BONUS;
-      }
-
-      // Determine deep work target based on streak status
-      const target =
-        streak?.status === "recovery" &&
-        streak.recovery_required_by === profile.id
-          ? DEEP_WORK_RECOVERY_TARGET
-          : DEEP_WORK_DAILY_TARGET;
-
-      const hitTarget = deepWorkMinutes >= target;
-      userDeepWorkStatus[profile.id] = hitTarget;
-
-      const completionPercentage =
-        tasksTotal > 0 ? (tasksCompleted / tasksTotal) * 100 : 0;
-
-      // Upsert daily summary
-      const { error: summaryError } = await supabase
-        .from("daily_summaries")
-        .upsert(
-          {
-            user_id: profile.id,
-            date: today,
-            tasks_total: tasksTotal,
-            tasks_completed: tasksCompleted,
-            completion_percentage: completionPercentage,
-            points_earned: points,
-            deep_work_minutes: deepWorkMinutes,
-            streak_maintained: hitTarget,
-          },
-          { onConflict: "user_id,date" }
-        );
-
-      results.push({
-        user_id: profile.id,
-        points,
-        deep_work_minutes: deepWorkMinutes,
-        hit_target: hitTarget,
-        error: summaryError?.message,
-      });
-    }
-
-    // Update streak (skip if break day)
-    if (!isBreakDay && streak) {
-      const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
-      const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
-
-      let newStatus = streak.status;
-      let newCount = streak.current_count;
-      let newRecoveryDays = streak.recovery_days_remaining;
-      let newBest = streak.best_count;
-      let recoveryBy = streak.recovery_required_by;
-
-      if (streak.status === "active") {
-        if (allHitTarget) {
-          newCount += 1;
-          if (newCount > newBest) newBest = newCount;
-        } else if (anyMissed) {
-          newStatus = "recovery";
-          newRecoveryDays = STREAK_RECOVERY_DAYS;
-          // Find who missed
-          const missedUser = Object.entries(userDeepWorkStatus).find(
-            ([, v]) => !v
-          );
-          recoveryBy = missedUser ? missedUser[0] : null;
-        }
-      } else if (streak.status === "recovery") {
-        if (allHitTarget) {
-          newRecoveryDays -= 1;
-          if (newRecoveryDays <= 0) {
-            newStatus = "active";
-            newRecoveryDays = 0;
-            recoveryBy = null;
-          }
-        } else {
-          // Failed recovery
-          newStatus = "broken";
-          newCount = 0;
-          newRecoveryDays = 0;
-          recoveryBy = null;
-        }
-      } else if (streak.status === "broken") {
-        if (allHitTarget) {
-          newStatus = "active";
-          newCount = 1;
-          newRecoveryDays = 0;
-          recoveryBy = null;
-        }
-      }
-
-      await supabase
-        .from("streaks")
-        .update({
-          current_count: newCount,
-          best_count: newBest,
-          last_active_date: today,
-          status: newStatus,
-          recovery_days_remaining: newRecoveryDays,
-          recovery_required_by: recoveryBy,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", streak.id);
-    }
-
-    return NextResponse.json({
-      message: "Daily summary calculated",
-      date: today,
-      results,
-      is_break_day: isBreakDay,
-    });
+    const result = await runDailySummary();
+    return NextResponse.json(result);
   } catch (error) {
+    console.error("[cron/daily-summary] Error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Failed to run daily summary" },
       { status: 500 }
     );
   }

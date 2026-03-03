@@ -42,6 +42,9 @@ export const MAX_SOLO_PAUSES_PER_MONTH = 2;
 export const MAX_MUTUAL_BREAK_DAYS = 3;
 export const MAX_EMERGENCY_BREAK_DAYS = 7;
 
+// Task validation
+export const TASK_TITLE_MAX_LENGTH = 200;
+
 // Task cutoff time (10:00 AM IST)
 export const TASK_CUTOFF_HOUR = 10;
 

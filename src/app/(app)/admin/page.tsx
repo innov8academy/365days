@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,10 +20,20 @@ interface DataCounts {
 }
 
 export default function AdminPage() {
+  const { user, loading: authLoading } = useAuth();
   const [counts, setCounts] = useState<DataCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const supabase = createClient();
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      loadCounts();
+    } else if (!authLoading) {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user]);
 
   async function loadCounts() {
     const [tasks, deepWork, summaries, competitions, breaks, streak] = await Promise.all([
@@ -44,11 +55,6 @@ export default function AdminPage() {
     });
     setLoading(false);
   }
-
-  useEffect(() => {
-    loadCounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function resetTable(table: string, label: string) {
     setActionLoading(table);
@@ -124,8 +130,8 @@ export default function AdminPage() {
   async function triggerDailyCron() {
     setActionLoading("cron");
     try {
-      const res = await fetch(`/api/cron/daily-summary?secret=${encodeURIComponent(process.env.NEXT_PUBLIC_CRON_SECRET || "")}`, {
-        method: "GET",
+      const res = await fetch("/api/admin/trigger-cron", {
+        method: "POST",
       });
       const data = await res.json();
       if (res.ok) {
@@ -140,7 +146,7 @@ export default function AdminPage() {
     setActionLoading(null);
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-muted-foreground">Loading admin...</div>
@@ -148,8 +154,19 @@ export default function AdminPage() {
     );
   }
 
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-2">
+          <Shield className="h-8 w-8 mx-auto text-destructive" />
+          <p className="text-muted-foreground">Access denied.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen p-4 lg:p-8 max-w-3xl mx-auto space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Shield className="h-6 w-6 text-flame" />
         <h1 className="text-2xl font-bold">Admin Panel</h1>
