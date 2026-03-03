@@ -13,6 +13,9 @@ import {
   Timer,
   Coffee,
   CheckCircle2,
+  Settings2,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { formatTime, formatMinutesToHours } from "@/lib/dates";
 import {
@@ -137,11 +140,42 @@ function loadTimerState(): TimerSavedState | null {
   }
 }
 
+const SETTINGS_STORAGE_KEY = "365days-timer-settings";
+
+interface TimerSettings {
+  workMinutes: number;
+  breakMinutes: number;
+  longBreakMinutes: number;
+}
+
+const DEFAULT_SETTINGS: TimerSettings = {
+  workMinutes: POMODORO_WORK_MINUTES,
+  breakMinutes: POMODORO_BREAK_MINUTES,
+  longBreakMinutes: POMODORO_LONG_BREAK_MINUTES,
+};
+
+function saveSettings(settings: TimerSettings) {
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch { /* ignore */ }
+}
+
+function loadSettings(): TimerSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
 function getModeDurationStatic(m: TimerMode): number {
+  const settings = loadSettings();
   switch (m) {
-    case "work": return POMODORO_WORK_MINUTES * 60;
-    case "break": return POMODORO_BREAK_MINUTES * 60;
-    case "longBreak": return POMODORO_LONG_BREAK_MINUTES * 60;
+    case "work": return settings.workMinutes * 60;
+    case "break": return settings.breakMinutes * 60;
+    case "longBreak": return settings.longBreakMinutes * 60;
   }
 }
 
@@ -165,12 +199,17 @@ export function TimerView({
     myDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0)
   );
   const [hitTarget, setHitTarget] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<TimerSettings>(DEFAULT_SETTINGS);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const broadcastTickRef = useRef(0);
   const supabase = createClient();
 
   useEffect(() => {
+    const loadedSettings = loadSettings();
+    setSettings(loadedSettings);
+
     const saved = loadTimerState();
     if (saved) {
       setMode(saved.mode);
@@ -193,6 +232,9 @@ export function TimerView({
       } else {
         setSecondsLeft(saved.secondsLeft);
       }
+    } else {
+      // No saved state — use loaded settings for initial duration
+      setSecondsLeft(loadedSettings.workMinutes * 60);
     }
     setInitialized(true);
   }, []);
@@ -238,11 +280,27 @@ export function TimerView({
   function getModeDuration(m: TimerMode): number {
     switch (m) {
       case "work":
-        return POMODORO_WORK_MINUTES * 60;
+        return settings.workMinutes * 60;
       case "break":
-        return POMODORO_BREAK_MINUTES * 60;
+        return settings.breakMinutes * 60;
       case "longBreak":
-        return POMODORO_LONG_BREAK_MINUTES * 60;
+        return settings.longBreakMinutes * 60;
+    }
+  }
+
+  function updateSettings(newSettings: TimerSettings) {
+    setSettings(newSettings);
+    saveSettings(newSettings);
+    // If timer isn't running, update the current duration to match
+    if (!isRunning) {
+      const newDuration = (() => {
+        switch (mode) {
+          case "work": return newSettings.workMinutes * 60;
+          case "break": return newSettings.breakMinutes * 60;
+          case "longBreak": return newSettings.longBreakMinutes * 60;
+        }
+      })();
+      setSecondsLeft(newDuration);
     }
   }
 
@@ -291,18 +349,18 @@ export function TimerView({
 
               if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
                 setMode("longBreak");
-                broadcastState(POMODORO_LONG_BREAK_MINUTES * 60, false, "longBreak");
-                return POMODORO_LONG_BREAK_MINUTES * 60;
+                broadcastState(settings.longBreakMinutes * 60, false, "longBreak");
+                return settings.longBreakMinutes * 60;
               } else {
                 setMode("break");
-                broadcastState(POMODORO_BREAK_MINUTES * 60, false, "break");
-                return POMODORO_BREAK_MINUTES * 60;
+                broadcastState(settings.breakMinutes * 60, false, "break");
+                return settings.breakMinutes * 60;
               }
             } else {
               toast.success("Break over! Ready to focus?");
               setMode("work");
-              broadcastState(POMODORO_WORK_MINUTES * 60, false, "work");
-              return POMODORO_WORK_MINUTES * 60;
+              broadcastState(settings.workMinutes * 60, false, "work");
+              return settings.workMinutes * 60;
             }
           }
 
@@ -320,7 +378,7 @@ export function TimerView({
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isRunning, mode, sessionsCompleted, saveSession, broadcastState]);
+  }, [isRunning, mode, sessionsCompleted, saveSession, broadcastState, settings]);
 
   function handleStart() {
     if (mode === "work" && !sessionStartTime) {
@@ -386,8 +444,8 @@ export function TimerView({
             <div className="absolute inset-0 bg-gradient-to-b from-emerald-400/[0.04] to-transparent pointer-events-none" />
           )}
           <CardContent className="relative pt-6 lg:pt-8 space-y-6 lg:space-y-8">
-            {/* Mode Switcher */}
-            <div className="flex justify-center">
+            {/* Mode Switcher + Settings */}
+            <div className="flex justify-center items-center gap-2">
               <div className="inline-flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06]">
                 <Button
                   variant="ghost"
@@ -432,7 +490,132 @@ export function TimerView({
                   Long Break
                 </Button>
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowSettings(!showSettings)}
+                disabled={isRunning}
+                className={cn(
+                  "h-8 w-8 rounded-lg transition-all",
+                  showSettings
+                    ? "bg-flame/[0.12] text-flame border border-flame/[0.15]"
+                    : "text-muted-foreground/40 hover:text-foreground hover:bg-white/[0.04]"
+                )}
+              >
+                <Settings2 className="h-4 w-4" />
+              </Button>
             </div>
+
+            {/* Custom Duration Settings */}
+            {showSettings && !isRunning && (
+              <div className="animate-slide-in mx-auto max-w-xs space-y-3 p-4 rounded-xl bg-white/[0.04] border border-white/[0.06]">
+                <div className="text-xs font-medium text-center text-muted-foreground/60 uppercase tracking-wider">Custom Durations</div>
+                {/* Work Duration */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground/80">Focus</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
+                      onClick={() => updateSettings({ ...settings, workMinutes: Math.max(5, settings.workMinutes - 5) })}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                    <span className="text-sm font-mono font-medium w-12 text-center">{settings.workMinutes}m</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
+                      onClick={() => updateSettings({ ...settings, workMinutes: Math.min(120, settings.workMinutes + 5) })}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+                {/* Break Duration */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground/80">Break</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
+                      onClick={() => updateSettings({ ...settings, breakMinutes: Math.max(1, settings.breakMinutes - 1) })}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                    <span className="text-sm font-mono font-medium w-12 text-center">{settings.breakMinutes}m</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
+                      onClick={() => updateSettings({ ...settings, breakMinutes: Math.min(30, settings.breakMinutes + 1) })}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+                {/* Long Break Duration */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground/80">Long Break</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
+                      onClick={() => updateSettings({ ...settings, longBreakMinutes: Math.max(5, settings.longBreakMinutes - 5) })}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                    <span className="text-sm font-mono font-medium w-12 text-center">{settings.longBreakMinutes}m</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
+                      onClick={() => updateSettings({ ...settings, longBreakMinutes: Math.min(60, settings.longBreakMinutes + 5) })}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+                {/* Quick presets */}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 text-[10px] rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground/60 hover:text-foreground"
+                    onClick={() => updateSettings({ workMinutes: 25, breakMinutes: 5, longBreakMinutes: 15 })}
+                  >
+                    25/5
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 text-[10px] rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground/60 hover:text-foreground"
+                    onClick={() => updateSettings({ workMinutes: 45, breakMinutes: 10, longBreakMinutes: 20 })}
+                  >
+                    45/10
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 text-[10px] rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground/60 hover:text-foreground"
+                    onClick={() => updateSettings({ workMinutes: 60, breakMinutes: 15, longBreakMinutes: 30 })}
+                  >
+                    60/15
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 text-[10px] rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground/60 hover:text-foreground"
+                    onClick={() => updateSettings({ workMinutes: 90, breakMinutes: 20, longBreakMinutes: 30 })}
+                  >
+                    90/20
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-center">
               <TimerRing
