@@ -54,12 +54,12 @@ export function TasksView({
 
   const statusBadge =
     myTotal > 0 && myCompleted === myTotal ? (
-      <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+      <Badge className="bg-success/[0.12] text-success border-success/[0.2] rounded-lg">
         <CheckCircle2 className="h-3 w-3 mr-1" />
         All Done! +10pts
       </Badge>
     ) : myTotal > 0 ? (
-      <Badge variant="secondary">
+      <Badge variant="secondary" className="rounded-lg bg-white/[0.06] border-white/[0.08]">
         <XCircle className="h-3 w-3 mr-1" />
         {myCompleted}/{myTotal} — 0pts
       </Badge>
@@ -68,18 +68,18 @@ export function TasksView({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold lg:text-2xl">Today&apos;s Tasks</h1>
+        <h1 className="text-xl font-bold lg:text-2xl tracking-tight">Today&apos;s Tasks</h1>
         <div className="flex items-center gap-2">{statusBadge}</div>
       </div>
 
       {/* Mobile: Tabs */}
       <div className="lg:hidden">
         <Tabs defaultValue="mine" className="w-full">
-          <TabsList className="w-full">
-            <TabsTrigger value="mine" className="flex-1">
+          <TabsList className="w-full rounded-xl bg-white/[0.05] border border-white/[0.08] p-1">
+            <TabsTrigger value="mine" className="flex-1 rounded-lg data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground">
               {me?.name ?? "My Tasks"} ({myCompleted}/{myTotal})
             </TabsTrigger>
-            <TabsTrigger value="partner" className="flex-1">
+            <TabsTrigger value="partner" className="flex-1 rounded-lg data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground">
               {partner?.name ?? "Partner"} ({partnerCompleted}/{partnerTotal})
             </TabsTrigger>
           </TabsList>
@@ -113,7 +113,7 @@ export function TasksView({
             <CardHeader className="pb-3">
               <CardTitle className="text-base">
                 {me?.name ?? "My Tasks"}{" "}
-                <span className="text-muted-foreground font-normal">
+                <span className="text-muted-foreground/60 font-normal">
                   ({myCompleted}/{myTotal})
                 </span>
               </CardTitle>
@@ -137,17 +137,17 @@ export function TasksView({
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">
                   {partner?.name ?? "Partner"}{" "}
-                  <span className="text-muted-foreground font-normal">
+                  <span className="text-muted-foreground/60 font-normal">
                     ({partnerCompleted}/{partnerTotal})
                   </span>
                 </CardTitle>
                 {partnerTotal > 0 && partnerCompleted === partnerTotal ? (
-                  <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+                  <Badge className="bg-success/[0.12] text-success border-success/[0.2] rounded-lg">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
                     +10pts
                   </Badge>
                 ) : partnerTotal > 0 ? (
-                  <Badge variant="secondary">
+                  <Badge variant="secondary" className="rounded-lg bg-white/[0.06] border-white/[0.08]">
                     <XCircle className="h-3 w-3 mr-1" />
                     0pts
                   </Badge>
@@ -156,7 +156,7 @@ export function TasksView({
             </CardHeader>
             <CardContent>
               {partnerTasks.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground text-sm">
+                <div className="py-8 text-center text-muted-foreground/60 text-sm">
                   {partner?.name ?? "Partner"} hasn&apos;t added tasks yet today.
                 </div>
               ) : (
@@ -189,11 +189,9 @@ function PartnerTaskSection({
   return (
     <div className="space-y-3">
       {partnerTasks.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {partner?.name ?? "Partner"} hasn&apos;t added tasks yet today.
-          </CardContent>
-        </Card>
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] py-8 text-center text-muted-foreground/60 text-sm">
+          {partner?.name ?? "Partner"} hasn&apos;t added tasks yet today.
+        </div>
       ) : (
         <TaskList
           tasks={partnerTasks}
@@ -203,25 +201,23 @@ function PartnerTaskSection({
         />
       )}
       {partnerTotal > 0 && (
-        <Card>
-          <CardContent className="py-3">
-            {partnerCompleted === partnerTotal ? (
-              <div className="flex items-center gap-2 text-green-500">
-                <CheckCircle2 className="h-4 w-4" />
-                <span className="text-sm font-medium">
-                  All tasks completed! +10pts
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <XCircle className="h-4 w-4" />
-                <span className="text-sm">
-                  {partnerCompleted}/{partnerTotal} completed — 0pts
-                </span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] py-3 px-4">
+          {partnerCompleted === partnerTotal ? (
+            <div className="flex items-center gap-2 text-success">
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="text-sm font-medium">
+                All tasks completed! +10pts
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-muted-foreground/60">
+              <XCircle className="h-4 w-4" />
+              <span className="text-sm">
+                {partnerCompleted}/{partnerTotal} completed — 0pts
+              </span>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

@@ -62,9 +62,14 @@ export function TaskInput({ userId, date, onTaskAdded }: TaskInputProps) {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         maxLength={TASK_TITLE_MAX_LENGTH}
-        className="flex-1"
+        className="flex-1 h-10 rounded-xl bg-white/[0.06] border-white/[0.1] focus:border-flame/40 focus:ring-flame/20 transition-all placeholder:text-muted-foreground/40"
       />
-      <Button type="submit" size="icon" disabled={loading || !title.trim()}>
+      <Button
+        type="submit"
+        size="icon"
+        disabled={loading || !title.trim()}
+        className="h-10 w-10 rounded-xl bg-gradient-to-r from-flame to-orange-500 text-white shadow-lg shadow-flame/20 hover:shadow-flame/30 hover:brightness-110 transition-all disabled:opacity-30"
+      >
         <Plus className="h-4 w-4" />
       </Button>
     </form>

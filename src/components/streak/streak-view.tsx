@@ -24,7 +24,6 @@ import {
   DEEP_WORK_RECOVERY_TARGET,
 } from "@/lib/constants";
 import { getMilestones, getDaysUntilMovieFood, getNextMovieFoodDay } from "@/lib/milestones";
-import type { Milestone } from "@/lib/milestones";
 import { cn } from "@/lib/utils";
 import type { Streak } from "@/types/database";
 
@@ -76,88 +75,100 @@ export function StreakView({
   const myHitTarget = myTodayMinutes >= target;
   const partnerHitTarget = partnerTodayMinutes >= target;
 
-  // Dynamic milestones
   const milestones = getMilestones(currentStreak);
   const nextMilestone = milestones.find((m) => m.days > currentStreak);
   const prevMilestone = [...milestones]
     .reverse()
     .find((m) => m.days <= currentStreak);
 
-  // Next Movie + Food Day
   const daysUntilMovieFood = getDaysUntilMovieFood(currentStreak);
   const nextMovieFoodDay = getNextMovieFoodDay(currentStreak);
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold">Streak</h1>
+      <h1 className="text-xl font-bold tracking-tight">Streak</h1>
 
       {/* Main Streak Card */}
       <Card
         className={cn(
-          "text-center shadow-sm",
-          isRecovery && "border-yellow-500/30 bg-yellow-500/5",
-          isBroken && "border-red-500/30 bg-red-500/5",
-          !isRecovery && !isBroken && "border-flame/30 bg-gradient-to-br from-flame/10 via-orange-500/5 to-red-500/10"
+          "text-center overflow-hidden",
+          isRecovery && "border-yellow-500/[0.15]",
+          isBroken && "border-red-500/[0.15]",
+          !isRecovery && !isBroken && "border-flame/[0.12] glow-flame"
         )}
       >
-        <CardContent className="pt-8 pb-6 space-y-3">
-          <Flame
-            className={cn(
-              "h-16 w-16 mx-auto drop-shadow-lg",
-              isRecovery
-                ? "text-yellow-500"
-                : isBroken
-                  ? "text-muted-foreground"
-                  : "text-flame animate-flame-flicker"
+        {!isRecovery && !isBroken && (
+          <div className="absolute inset-0 bg-gradient-to-br from-flame/[0.06] via-orange-500/[0.03] to-transparent pointer-events-none" />
+        )}
+        {isRecovery && (
+          <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/[0.06] to-transparent pointer-events-none" />
+        )}
+        <CardContent className="relative pt-8 pb-6 space-y-3">
+          <div className="relative inline-block">
+            {!isRecovery && !isBroken && (
+              <div className="absolute inset-0 bg-flame/20 rounded-2xl blur-xl scale-150" />
             )}
-          />
-          <div className="text-5xl font-bold">
+            <Flame
+              className={cn(
+                "relative h-16 w-16 mx-auto",
+                isRecovery
+                  ? "text-yellow-500"
+                  : isBroken
+                    ? "text-muted-foreground/30"
+                    : "text-flame animate-flame-flicker drop-shadow-[0_0_12px_var(--flame-glow)]"
+              )}
+            />
+          </div>
+          <div className="text-5xl font-bold tracking-tight">
             <AnimatedCounter value={currentStreak} />
           </div>
-          <div className="text-muted-foreground">
+          <div className="text-muted-foreground/60">
             {currentStreak === 1 ? "day" : "days"} streak
           </div>
           {isRecovery && (
-            <Badge variant="outline" className="border-yellow-500 text-yellow-500">
+            <Badge variant="outline" className="border-yellow-500/30 text-yellow-500 rounded-lg">
               <AlertTriangle className="h-3 w-3 mr-1" />
               Recovery Mode — {streak?.recovery_days_remaining ?? 0} days left
             </Badge>
           )}
           {isBroken && (
-            <Badge variant="destructive">Streak Broken</Badge>
+            <Badge variant="destructive" className="rounded-lg">Streak Broken</Badge>
           )}
           {prevMilestone && (
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground/50">
               Last milestone: {prevMilestone.reward}
             </div>
           )}
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground/50">
             Personal best: {bestStreak} days
           </div>
         </CardContent>
       </Card>
 
-      {/* Next Movie + Food Day Callout */}
-      <Card className="shadow-sm border-amber-500/30 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
-        <CardContent className="py-4 px-4">
+      {/* Next Movie + Food Day */}
+      <Card className="border-amber-400/[0.12] overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-amber-400/[0.04] to-orange-400/[0.02] pointer-events-none" />
+        <CardContent className="relative py-4 px-4">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400 shrink-0">
-              <Film className="h-5 w-5" />
-              <Utensils className="h-5 w-5" />
+            <div className="h-10 w-10 rounded-xl bg-amber-400/[0.1] border border-amber-400/[0.15] flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-0.5 text-amber-400">
+                <Film className="h-4 w-4" />
+                <Utensils className="h-4 w-4" />
+              </div>
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium">Next Movie + Food Day</div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-muted-foreground/60">
                 Day {nextMovieFoodDay} — {daysUntilMovieFood === 0 ? "Today!" : `${daysUntilMovieFood} day${daysUntilMovieFood === 1 ? "" : "s"} away`}
               </div>
             </div>
             {daysUntilMovieFood === 0 && (
-              <Badge className="bg-amber-500 text-white shrink-0">
+              <Badge className="bg-amber-500 text-white shrink-0 rounded-lg">
                 Today!
               </Badge>
             )}
             {daysUntilMovieFood > 0 && (
-              <Badge variant="secondary" className="shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+              <Badge variant="secondary" className="shrink-0 bg-amber-400/[0.08] text-amber-400 border-amber-400/[0.15] rounded-lg">
                 {daysUntilMovieFood}d
               </Badge>
             )}
@@ -166,7 +177,7 @@ export function StreakView({
       </Card>
 
       {/* Today's Progress */}
-      <Card className="shadow-sm">
+      <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
             Today&apos;s Deep Work
@@ -189,7 +200,7 @@ export function StreakView({
                 {myHitTarget ? (
                   <CheckCircle2 className="h-4 w-4 text-success" />
                 ) : (
-                  <XCircle className="h-4 w-4 text-muted-foreground" />
+                  <XCircle className="h-4 w-4 text-muted-foreground/30" />
                 )}
               </div>
             </div>
@@ -206,7 +217,7 @@ export function StreakView({
                 {partnerHitTarget ? (
                   <CheckCircle2 className="h-4 w-4 text-success" />
                 ) : (
-                  <XCircle className="h-4 w-4 text-muted-foreground" />
+                  <XCircle className="h-4 w-4 text-muted-foreground/30" />
                 )}
               </div>
             </div>
@@ -216,7 +227,7 @@ export function StreakView({
       </Card>
 
       {/* Contribution Graph */}
-      <Card className="shadow-sm">
+      <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Activity</CardTitle>
         </CardHeader>
@@ -231,7 +242,7 @@ export function StreakView({
       </Card>
 
       {/* Milestones */}
-      <Card className="shadow-sm">
+      <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Milestones</CardTitle>
         </CardHeader>
@@ -245,12 +256,12 @@ export function StreakView({
                 <div
                   key={`${milestone.type}-${milestone.days}`}
                   className={cn(
-                    "flex items-center gap-3 p-2 rounded-lg transition-colors cursor-pointer",
-                    achieved && !isRecurring && "bg-success/10",
-                    achieved && isRecurring && "bg-amber-500/10",
-                    isNext && !isRecurring && "bg-flame/5 border border-flame/20",
-                    isNext && isRecurring && "bg-amber-500/5 border border-amber-500/20",
-                    !achieved && !isNext && "hover:bg-muted/50"
+                    "flex items-center gap-3 p-2.5 rounded-xl transition-all",
+                    achieved && !isRecurring && "bg-success/[0.06] border border-success/[0.1]",
+                    achieved && isRecurring && "bg-amber-400/[0.06] border border-amber-400/[0.1]",
+                    isNext && !isRecurring && "bg-flame/[0.04] border border-flame/[0.12]",
+                    isNext && isRecurring && "bg-amber-400/[0.04] border border-amber-400/[0.12]",
+                    !achieved && !isNext && "border border-transparent hover:bg-white/[0.03]"
                   )}
                 >
                   <div
@@ -258,9 +269,9 @@ export function StreakView({
                       "shrink-0",
                       achieved
                         ? isRecurring
-                          ? "text-amber-500"
+                          ? "text-amber-400"
                           : "text-success"
-                        : "text-muted-foreground"
+                        : "text-muted-foreground/30"
                     )}
                   >
                     {milestoneIcons[milestone.icon] ?? <Star className="h-4 w-4" />}
@@ -269,17 +280,17 @@ export function StreakView({
                     <div
                       className={cn(
                         "text-sm font-medium",
-                        !achieved && "text-muted-foreground"
+                        !achieved && "text-muted-foreground/60"
                       )}
                     >
                       {milestone.days} Days
                       {isRecurring && (
-                        <span className="text-[10px] font-normal text-amber-500 ml-1.5">
+                        <span className="text-[10px] font-normal text-amber-400 ml-1.5">
                           recurring
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground truncate">
+                    <div className="text-xs text-muted-foreground/50 truncate">
                       {milestone.reward}
                     </div>
                   </div>
@@ -287,7 +298,7 @@ export function StreakView({
                     <CheckCircle2
                       className={cn(
                         "h-4 w-4 shrink-0",
-                        isRecurring ? "text-amber-500" : "text-success"
+                        isRecurring ? "text-amber-400" : "text-success"
                       )}
                     />
                   )}
@@ -295,10 +306,10 @@ export function StreakView({
                     <Badge
                       variant="secondary"
                       className={cn(
-                        "shrink-0 text-xs",
+                        "shrink-0 text-xs rounded-lg",
                         isRecurring
-                          ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
-                          : "bg-flame/10 text-flame border-flame/20"
+                          ? "bg-amber-400/[0.08] text-amber-400 border-amber-400/[0.15]"
+                          : "bg-flame/[0.08] text-flame border-flame/[0.15]"
                       )}
                     >
                       {milestone.days - currentStreak}d away

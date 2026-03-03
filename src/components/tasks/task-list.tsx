@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
@@ -40,7 +39,6 @@ export function TaskList({
     if (!isOwner) return;
     const newCompleted = !task.completed;
 
-    // Trigger check-pop animation
     if (newCompleted) {
       setAnimatingId(task.id);
       setTimeout(() => setAnimatingId(null), 300);
@@ -48,7 +46,6 @@ export function TaskList({
 
     onTaskToggled(task.id, newCompleted);
 
-    // Check if all tasks are now completed
     if (newCompleted) {
       const allDone = tasks.every((t) =>
         t.id === task.id ? true : t.completed
@@ -88,52 +85,48 @@ export function TaskList({
 
   if (tasks.length === 0) {
     return (
-      <Card className="shadow-sm">
-        <CardContent className="py-8 text-center text-muted-foreground">
-          No tasks yet. Add your first task above!
-        </CardContent>
-      </Card>
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] py-8 text-center text-muted-foreground/60 text-sm">
+        No tasks yet. Add your first task above!
+      </div>
     );
   }
 
   return (
     <div className="space-y-2">
       {tasks.map((task) => (
-        <Card
+        <div
           key={task.id}
           className={cn(
-            "shadow-sm transition-all duration-300",
-            task.completed && "opacity-60",
+            "group flex items-center gap-3 py-3 px-4 rounded-xl border border-white/[0.06] bg-white/[0.03] transition-all duration-300 hover:bg-white/[0.05] hover:border-white/[0.1]",
+            task.completed && "opacity-50",
             animatingId === task.id && "animate-check-pop"
           )}
         >
-          <CardContent className="py-3 px-4 flex items-center gap-3">
-            <Checkbox
-              checked={task.completed}
-              onCheckedChange={() => toggleTask(task)}
-              disabled={!isOwner}
-              className="shrink-0 data-[state=checked]:bg-success data-[state=checked]:border-success"
-            />
-            <span
-              className={cn(
-                "flex-1 text-sm transition-all duration-300",
-                task.completed && "line-through text-muted-foreground"
-              )}
-            >
-              {task.title}
-            </span>
-            {isOwner && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                onClick={() => deleteTask(task.id)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+          <Checkbox
+            checked={task.completed}
+            onCheckedChange={() => toggleTask(task)}
+            disabled={!isOwner}
+            className="shrink-0 rounded-md data-[state=checked]:bg-success data-[state=checked]:border-success"
+          />
+          <span
+            className={cn(
+              "flex-1 text-sm transition-all duration-300",
+              task.completed && "line-through text-muted-foreground/60"
             )}
-          </CardContent>
-        </Card>
+          >
+            {task.title}
+          </span>
+          {isOwner && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
+              onClick={() => deleteTask(task.id)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
       ))}
     </div>
   );

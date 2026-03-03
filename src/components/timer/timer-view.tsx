@@ -40,7 +40,6 @@ interface TimerViewProps {
   partnerTimer?: { mode: string; secondsLeft: number; isRunning: boolean } | null;
 }
 
-// Circular timer ring component
 function TimerRing({
   secondsLeft,
   totalSeconds,
@@ -53,7 +52,7 @@ function TimerRing({
   isRunning: boolean;
 }) {
   const size = 280;
-  const strokeWidth = 6;
+  const strokeWidth = 4;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = (totalSeconds - secondsLeft) / totalSeconds;
@@ -62,10 +61,14 @@ function TimerRing({
   const strokeColor =
     mode === "work"
       ? "stroke-[var(--flame)]"
-      : "stroke-emerald-500";
+      : "stroke-emerald-400";
 
   return (
     <div className="relative inline-flex items-center justify-center">
+      {/* Glow behind ring */}
+      {isRunning && mode === "work" && (
+        <div className="absolute inset-8 rounded-full bg-flame/[0.06] blur-2xl" />
+      )}
       <svg
         width={size}
         height={size}
@@ -74,7 +77,6 @@ function TimerRing({
           isRunning && mode === "work" && "animate-timer-ring-pulse"
         )}
       >
-        {/* Background circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -82,9 +84,8 @@ function TimerRing({
           fill="none"
           stroke="currentColor"
           strokeWidth={strokeWidth}
-          className="text-muted/30"
+          className="text-white/[0.06]"
         />
-        {/* Progress circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -97,12 +98,11 @@ function TimerRing({
           strokeDashoffset={dashOffset}
         />
       </svg>
-      {/* Timer text overlay */}
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className="text-5xl lg:text-7xl font-mono font-bold tracking-wider">
           {formatTime(secondsLeft)}
         </div>
-        <div className="text-xs text-muted-foreground mt-1 capitalize">
+        <div className="text-xs text-muted-foreground/60 mt-1 capitalize font-medium tracking-wider">
           {mode === "longBreak" ? "Long Break" : mode}
         </div>
       </div>
@@ -118,7 +118,7 @@ interface TimerSavedState {
   isRunning: boolean;
   sessionsCompleted: number;
   sessionStartTime: string | null;
-  savedAt: number; // Date.now()
+  savedAt: number;
 }
 
 function saveTimerState(state: TimerSavedState) {
@@ -155,7 +155,6 @@ export function TimerView({
   onTimerUpdate,
   partnerTimer,
 }: TimerViewProps) {
-  // Restore timer state from localStorage
   const [initialized, setInitialized] = useState(false);
   const [mode, setMode] = useState<TimerMode>("work");
   const [secondsLeft, setSecondsLeft] = useState(POMODORO_WORK_MINUTES * 60);
@@ -171,7 +170,6 @@ export function TimerView({
   const broadcastTickRef = useRef(0);
   const supabase = createClient();
 
-  // Restore from localStorage on mount
   useEffect(() => {
     const saved = loadTimerState();
     if (saved) {
@@ -179,7 +177,6 @@ export function TimerView({
       setSessionsCompleted(saved.sessionsCompleted);
 
       if (saved.isRunning) {
-        // Calculate elapsed time while page was closed
         const elapsed = Math.floor((Date.now() - saved.savedAt) / 1000);
         const remaining = saved.secondsLeft - elapsed;
 
@@ -190,7 +187,6 @@ export function TimerView({
             setSessionStartTime(new Date(saved.sessionStartTime));
           }
         } else {
-          // Timer expired while page was closed — reset to mode duration
           setSecondsLeft(getModeDurationStatic(saved.mode));
           setIsRunning(false);
         }
@@ -201,7 +197,6 @@ export function TimerView({
     setInitialized(true);
   }, []);
 
-  // Persist timer state whenever it changes
   useEffect(() => {
     if (!initialized) return;
     saveTimerState({
@@ -228,7 +223,6 @@ export function TimerView({
     100
   );
 
-  // Fire confetti when target reached
   useEffect(() => {
     if (todayMinutes >= DEEP_WORK_DAILY_TARGET && !hitTarget) {
       setHitTarget(true);
@@ -276,7 +270,6 @@ export function TimerView({
     }
   }, [sessionStartTime, mode, supabase, userId, today]);
 
-  // Broadcast timer state
   const broadcastState = useCallback(
     (s: number, running: boolean, m: TimerMode) => {
       onTimerUpdate?.({ mode: m, secondsLeft: s, isRunning: running });
@@ -313,7 +306,6 @@ export function TimerView({
             }
           }
 
-          // Broadcast every 15 seconds
           broadcastTickRef.current += 1;
           if (broadcastTickRef.current >= 15) {
             broadcastTickRef.current = 0;
@@ -376,50 +368,72 @@ export function TimerView({
 
   return (
     <div className="space-y-4 lg:space-y-6">
-      <h1 className="text-xl font-bold lg:text-2xl">Deep Work Timer</h1>
+      <h1 className="text-xl font-bold lg:text-2xl tracking-tight">Deep Work Timer</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-        {/* Timer — takes 2 cols on desktop */}
+        {/* Timer Card */}
         <Card
           className={cn(
-            "text-center lg:col-span-2 shadow-sm",
+            "text-center lg:col-span-2 overflow-hidden",
             mode === "work"
-              ? "border-flame/30"
-              : "border-emerald-500/30 bg-emerald-500/5"
+              ? "border-flame/[0.12]"
+              : "border-emerald-400/[0.12]"
           )}
         >
-          <CardContent className="pt-6 lg:pt-8 space-y-6 lg:space-y-8">
-            <div className="flex justify-center gap-2">
-              <Button
-                variant={mode === "work" ? "default" : "outline"}
-                size="sm"
-                onClick={() => switchMode("work")}
-                className={cn(mode === "work" && "bg-gradient-to-r from-primary to-flame text-primary-foreground")}
-              >
-                <Timer className="h-3 w-3 mr-1" />
-                Focus
-              </Button>
-              <Button
-                variant={mode === "break" ? "default" : "outline"}
-                size="sm"
-                onClick={() => switchMode("break")}
-                className={cn(mode === "break" && "bg-emerald-500 text-white hover:bg-emerald-600")}
-              >
-                <Coffee className="h-3 w-3 mr-1" />
-                Break
-              </Button>
-              <Button
-                variant={mode === "longBreak" ? "default" : "outline"}
-                size="sm"
-                onClick={() => switchMode("longBreak")}
-                className={cn(mode === "longBreak" && "bg-emerald-500 text-white hover:bg-emerald-600")}
-              >
-                <Coffee className="h-3 w-3 mr-1" />
-                Long Break
-              </Button>
+          {mode === "work" ? (
+            <div className="absolute inset-0 bg-gradient-to-b from-flame/[0.04] to-transparent pointer-events-none" />
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-b from-emerald-400/[0.04] to-transparent pointer-events-none" />
+          )}
+          <CardContent className="relative pt-6 lg:pt-8 space-y-6 lg:space-y-8">
+            {/* Mode Switcher */}
+            <div className="flex justify-center">
+              <div className="inline-flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06]">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => switchMode("work")}
+                  className={cn(
+                    "rounded-lg text-xs transition-all",
+                    mode === "work"
+                      ? "bg-flame/[0.12] text-flame border border-flame/[0.15] shadow-sm"
+                      : "text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.04]"
+                  )}
+                >
+                  <Timer className="h-3 w-3 mr-1" />
+                  Focus
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => switchMode("break")}
+                  className={cn(
+                    "rounded-lg text-xs transition-all",
+                    mode === "break"
+                      ? "bg-emerald-400/[0.12] text-emerald-400 border border-emerald-400/[0.15] shadow-sm"
+                      : "text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.04]"
+                  )}
+                >
+                  <Coffee className="h-3 w-3 mr-1" />
+                  Break
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => switchMode("longBreak")}
+                  className={cn(
+                    "rounded-lg text-xs transition-all",
+                    mode === "longBreak"
+                      ? "bg-emerald-400/[0.12] text-emerald-400 border border-emerald-400/[0.15] shadow-sm"
+                      : "text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.04]"
+                  )}
+                >
+                  <Coffee className="h-3 w-3 mr-1" />
+                  Long Break
+                </Button>
+              </div>
             </div>
 
-            {/* Circular Timer Ring */}
             <div className="flex justify-center">
               <TimerRing
                 secondsLeft={secondsLeft}
@@ -435,7 +449,7 @@ export function TimerView({
                   size="lg"
                   variant="outline"
                   onClick={handlePause}
-                  className="px-8"
+                  className="px-8 rounded-xl border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08]"
                 >
                   <Pause className="h-5 w-5 mr-2" />
                   Pause
@@ -444,36 +458,42 @@ export function TimerView({
                 <Button
                   size="lg"
                   onClick={handleStart}
-                  className="px-8 bg-gradient-to-r from-primary to-flame text-primary-foreground shadow-sm"
+                  className="px-8 rounded-xl bg-gradient-to-r from-flame to-orange-500 text-white shadow-lg shadow-flame/20 hover:shadow-flame/30 hover:brightness-110 transition-all"
                 >
                   <Play className="h-5 w-5 mr-2" />
                   {secondsLeft < totalSeconds ? "Resume" : "Start"}
                 </Button>
               )}
-              <Button size="lg" variant="ghost" onClick={handleReset}>
+              <Button
+                size="lg"
+                variant="ghost"
+                onClick={handleReset}
+                className="rounded-xl text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.04]"
+              >
                 <RotateCcw className="h-5 w-5" />
               </Button>
             </div>
 
-            <div className="text-sm text-muted-foreground pb-2">
+            <div className="text-sm text-muted-foreground/50 pb-2">
               {sessionsCompleted} pomodoros completed today
             </div>
           </CardContent>
         </Card>
 
-        {/* Right sidebar on desktop: progress + sessions */}
+        {/* Right sidebar */}
         <div className="space-y-4">
-          {/* Partner focusing badge */}
           {isPartnerFocusing && (
-            <Card className="border-flame/30 animate-pulse-glow shadow-sm">
+            <Card className="border-flame/[0.15] animate-pulse-glow">
               <CardContent className="py-3">
                 <div className="flex items-center gap-2">
-                  <Timer className="h-4 w-4 text-flame" />
+                  <div className="h-8 w-8 rounded-lg bg-flame/[0.1] border border-flame/[0.15] flex items-center justify-center">
+                    <Timer className="h-4 w-4 text-flame" />
+                  </div>
                   <div className="flex-1">
                     <div className="text-xs font-medium">
                       {partner?.name ?? "Partner"} is focusing
                     </div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground/60">
                       {formatTime(partnerTimer.secondsLeft)} left
                     </div>
                   </div>
@@ -482,7 +502,7 @@ export function TimerView({
             </Card>
           )}
 
-          <Card className="shadow-sm">
+          <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Daily Progress</CardTitle>
             </CardHeader>
@@ -519,7 +539,7 @@ export function TimerView({
           </Card>
 
           {myDeepWork.length > 0 && (
-            <Card className="shadow-sm">
+            <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Today&apos;s Sessions</CardTitle>
               </CardHeader>
@@ -528,15 +548,15 @@ export function TimerView({
                   {myDeepWork.map((session) => (
                     <div
                       key={session.id}
-                      className="flex items-center justify-between text-sm"
+                      className="flex items-center justify-between text-sm py-1.5 px-2 rounded-lg bg-white/[0.03]"
                     >
-                      <span className="text-muted-foreground">
+                      <span className="text-muted-foreground/60">
                         {new Date(session.started_at).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
                       </span>
-                      <Badge variant="secondary" className="bg-flame/10 text-flame border-flame/20">
+                      <Badge variant="secondary" className="bg-flame/[0.08] text-flame border-flame/[0.12] rounded-md">
                         {formatMinutesToHours(session.duration_minutes)}
                       </Badge>
                     </div>
