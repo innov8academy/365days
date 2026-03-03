@@ -56,40 +56,23 @@ export default function AdminPage() {
     setLoading(false);
   }
 
-  async function resetTable(table: string, label: string) {
-    setActionLoading(table);
-    const { error } = await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    if (error) {
-      toast.error(`Failed to reset ${label}: ${error.message}`);
-    } else {
-      toast.success(`${label} reset successfully`);
-      await loadCounts();
-    }
-    setActionLoading(null);
-  }
-
-  async function resetStreak() {
-    setActionLoading("streaks");
-    const { data: streak } = await supabase.from("streaks").select("id").limit(1).single();
-    if (streak) {
-      const { error } = await supabase
-        .from("streaks")
-        .update({
-          current_count: 0,
-          best_count: 0,
-          status: "active",
-          recovery_days_remaining: 0,
-          recovery_required_by: null,
-          last_active_date: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", streak.id);
-      if (error) {
-        toast.error(`Failed to reset streak: ${error.message}`);
-      } else {
-        toast.success("Streak reset to 0");
+  async function resetViaApi(target: string, label: string) {
+    setActionLoading(target);
+    try {
+      const res = await fetch("/api/admin/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`${label} reset successfully`);
         await loadCounts();
+      } else {
+        toast.error(`Failed to reset ${label}: ${data.error || "Unknown error"}`);
       }
+    } catch {
+      toast.error(`Failed to reset ${label}`);
     }
     setActionLoading(null);
   }
@@ -99,31 +82,24 @@ export default function AdminPage() {
       return;
     }
     setActionLoading("everything");
-
-    const tables = [
-      { table: "daily_summaries", label: "Summaries" },
-      { table: "deep_work_sessions", label: "Deep Work" },
-      { table: "daily_tasks", label: "Tasks" },
-      { table: "competitions", label: "Competitions" },
-      { table: "breaks", label: "Breaks" },
-    ];
-
-    for (const { table, label } of tables) {
-      const { error } = await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      if (error) {
-        toast.error(`Failed to reset ${label}: ${error.message}`);
-        setActionLoading(null);
-        return;
+    try {
+      const res = await fetch("/api/admin/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: "everything" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // Clear localStorage timer
+        try { localStorage.removeItem("365days-timer"); } catch { /* ignore */ }
+        toast.success("All data reset! Fresh start.");
+        await loadCounts();
+      } else {
+        toast.error(`Failed to reset: ${data.error || "Unknown error"}`);
       }
+    } catch {
+      toast.error("Failed to reset everything");
     }
-
-    await resetStreak();
-
-    // Clear localStorage timer
-    try { localStorage.removeItem("365days-timer"); } catch { /* ignore */ }
-
-    toast.success("All data reset! Fresh start.");
-    await loadCounts();
     setActionLoading(null);
   }
 
@@ -234,7 +210,7 @@ export default function AdminPage() {
                 variant="outline"
                 size="sm"
                 disabled={actionLoading !== null}
-                onClick={() => resetTable(table, label)}
+                onClick={() => resetViaApi(table, label)}
                 className="text-destructive hover:text-destructive"
               >
                 {actionLoading === table ? "Resetting..." : "Reset"}
@@ -247,7 +223,7 @@ export default function AdminPage() {
               variant="outline"
               size="sm"
               disabled={actionLoading !== null}
-              onClick={resetStreak}
+              onClick={() => resetViaApi("streaks", "Streak")}
               className="text-destructive hover:text-destructive"
             >
               {actionLoading === "streaks" ? "Resetting..." : "Reset"}

@@ -121,6 +121,27 @@ export function useRealtimeSync() {
           mutate("summaries");
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "streaks" },
+        () => {
+          mutate("streak");
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "competitions" },
+        () => {
+          mutate("active-competition");
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "breaks" },
+        () => {
+          mutate("breaks");
+        }
+      )
       .subscribe();
 
     return () => {
