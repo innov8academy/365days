@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -23,11 +23,15 @@ export function TasksView({
   me,
   partner,
   myTasks: initialMyTasks,
-  partnerTasks: initialPartnerTasks,
+  partnerTasks,
   today,
 }: TasksViewProps) {
   const [myTasks, setMyTasks] = useState(initialMyTasks);
-  const [partnerTasks] = useState(initialPartnerTasks);
+
+  // Sync myTasks when props change (e.g. realtime update from another device)
+  useEffect(() => {
+    setMyTasks(initialMyTasks);
+  }, [initialMyTasks]);
 
   const myCompleted = myTasks.filter((t) => t.completed).length;
   const myTotal = myTasks.length;

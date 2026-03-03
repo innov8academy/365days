@@ -158,6 +158,9 @@ create policy "Users can insert breaks" on public.breaks
 create policy "Users can update breaks" on public.breaks
   for update using (true);
 
+create policy "Users can delete breaks" on public.breaks
+  for delete using (true);
+
 -- Create initial streak row
 insert into public.streaks (current_count, best_count, status) values (0, 0, 'active');
 
@@ -194,3 +197,7 @@ create index idx_breaks_dates on public.breaks(start_date, end_date);
 --
 -- Optional: add task title length constraint
 -- ALTER TABLE public.daily_tasks ADD CONSTRAINT daily_tasks_title_length CHECK (char_length(title) <= 200);
+
+-- MIGRATION: Add DELETE policy on breaks (for decline/cancel)
+-- Run in Supabase SQL Editor:
+-- create policy "Users can delete breaks" on public.breaks for delete using (true);

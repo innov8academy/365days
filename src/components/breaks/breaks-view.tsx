@@ -60,8 +60,14 @@ export function BreaksView({
         ? MAX_EMERGENCY_BREAK_DAYS
         : 1;
 
+  // Pending breaks from partner (I can approve or decline)
   const pendingBreaks = breaks.filter(
     (b) => !b.approved && b.type === "mutual" && b.requested_by !== userId
+  );
+
+  // My own pending mutual breaks (I can cancel)
+  const myPendingBreaks = breaks.filter(
+    (b) => !b.approved && b.type === "mutual" && b.requested_by === userId
   );
 
   async function requestBreak() {
@@ -118,6 +124,36 @@ export function BreaksView({
       prev.map((b) => (b.id === breakId ? { ...b, approved: true } : b))
     );
     toast.success("Break approved!");
+  }
+
+  async function declineBreak(breakId: string) {
+    const { error } = await supabase
+      .from("breaks")
+      .delete()
+      .eq("id", breakId);
+
+    if (error) {
+      toast.error("Failed to decline break");
+      return;
+    }
+
+    setBreaks((prev) => prev.filter((b) => b.id !== breakId));
+    toast.success("Break declined");
+  }
+
+  async function cancelBreak(breakId: string) {
+    const { error } = await supabase
+      .from("breaks")
+      .delete()
+      .eq("id", breakId);
+
+    if (error) {
+      toast.error("Failed to cancel break");
+      return;
+    }
+
+    setBreaks((prev) => prev.filter((b) => b.id !== breakId));
+    toast.success("Break request cancelled");
   }
 
   const getBreakIcon = (type: BreakType) => {
@@ -253,12 +289,64 @@ export function BreaksView({
                     {b.reason && ` — "${b.reason}"`}
                   </div>
                 </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => declineBreak(b.id)}
+                    className="rounded-xl text-muted-foreground/60 hover:text-red-400 hover:bg-red-400/[0.08]"
+                  >
+                    Decline
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => approveBreak(b.id)}
+                    className="rounded-xl bg-gradient-to-r from-flame to-orange-500 text-white shadow-lg shadow-flame/20"
+                  >
+                    Approve
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* My Pending Requests */}
+      {myPendingBreaks.length > 0 && (
+        <Card className="border-amber-400/[0.12]">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-400/[0.04] to-transparent pointer-events-none rounded-2xl" />
+          <CardHeader className="relative pb-3">
+            <CardTitle className="text-base text-amber-400">
+              My Pending Requests
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="relative space-y-3">
+            {myPendingBreaks.map((b) => (
+              <div
+                key={b.id}
+                className="flex items-center justify-between p-3.5 rounded-xl bg-amber-400/[0.04] border border-amber-400/[0.08]"
+              >
+                <div>
+                  <div className="text-sm font-medium">
+                    {b.type.charAt(0).toUpperCase() + b.type.slice(1)} break
+                  </div>
+                  <div className="text-xs text-muted-foreground/50">
+                    {format(new Date(b.start_date), "MMM d")} —{" "}
+                    {format(new Date(b.end_date), "MMM d")}
+                    {b.reason && ` — "${b.reason}"`}
+                  </div>
+                  <div className="text-xs text-muted-foreground/40 mt-0.5">
+                    Waiting for {partner?.name ?? "partner"} to approve
+                  </div>
+                </div>
                 <Button
                   size="sm"
-                  onClick={() => approveBreak(b.id)}
-                  className="rounded-xl bg-gradient-to-r from-flame to-orange-500 text-white shadow-lg shadow-flame/20"
+                  variant="ghost"
+                  onClick={() => cancelBreak(b.id)}
+                  className="rounded-xl text-muted-foreground/60 hover:text-red-400 hover:bg-red-400/[0.08]"
                 >
-                  Approve
+                  Cancel
                 </Button>
               </div>
             ))}

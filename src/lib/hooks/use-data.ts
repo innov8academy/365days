@@ -52,7 +52,7 @@ async function fetchSummaries() {
     .from("daily_summaries")
     .select("*")
     .order("date", { ascending: false })
-    .limit(60);
+    .limit(200);
   return data ?? [];
 }
 
