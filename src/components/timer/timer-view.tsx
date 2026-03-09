@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Play,
   Pause,
+  Square,
   RotateCcw,
   Timer,
   Coffee,
@@ -179,6 +180,44 @@ function getModeDurationStatic(m: TimerMode): number {
   }
 }
 
+function playCompletionBeep() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 800;
+    osc.type = "sine";
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.frequency.value = 1000;
+    osc2.type = "sine";
+    gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.6);
+    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.1);
+    osc2.start(ctx.currentTime + 0.6);
+    osc2.stop(ctx.currentTime + 1.1);
+  } catch { /* Audio not available */ }
+}
+
+function showBrowserNotification(title: string, body: string) {
+  if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    new Notification(title, { body, icon: "/favicon.ico" });
+  }
+}
+
+function requestNotificationPermission() {
+  if (typeof Notification !== "undefined" && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
 export function TimerView({
   userId,
   me,
@@ -204,8 +243,59 @@ export function TimerView({
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const broadcastTickRef = useRef(0);
+  const secondsLeftRef = useRef(secondsLeft);
+  const modeRef = useRef(mode);
+  const sessionsCompletedRef = useRef(sessionsCompleted);
+  const sessionStartTimeRef = useRef(sessionStartTime);
+  const isRunningRef = useRef(isRunning);
   const supabase = createClient();
 
+  // Keep refs in sync
+  useEffect(() => { secondsLeftRef.current = secondsLeft; }, [secondsLeft]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { sessionsCompletedRef.current = sessionsCompleted; }, [sessionsCompleted]);
+  useEffect(() => { sessionStartTimeRef.current = sessionStartTime; }, [sessionStartTime]);
+  useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+
+  // Save a session with timer-based duration (not wall clock)
+  const saveSessionWithDuration = useCallback(async (
+    startTime: Date,
+    elapsedSeconds: number,
+    maxMinutes?: number,
+  ) => {
+    const cap = maxMinutes ?? settings.workMinutes;
+    const durationMinutes = Math.min(
+      Math.max(1, Math.round(elapsedSeconds / 60)),
+      cap,
+    );
+
+    if (durationMinutes < 1) return;
+
+    const endTime = new Date();
+    try {
+      await supabase.from("deep_work_sessions").insert({
+        user_id: userId,
+        date: today,
+        started_at: startTime.toISOString(),
+        ended_at: endTime.toISOString(),
+        duration_minutes: durationMinutes,
+        session_type: "pomodoro",
+      });
+      setTodayMinutes((prev) => prev + durationMinutes);
+    } catch {
+      toast.error("Failed to save session");
+    }
+  }, [supabase, userId, today, settings.workMinutes]);
+
+  const saveSession = useCallback(async () => {
+    if (!sessionStartTimeRef.current || modeRef.current !== "work") return;
+    const totalSec = getModeDurationStatic(modeRef.current);
+    const elapsed = totalSec - secondsLeftRef.current;
+    if (elapsed < 60) return;
+    await saveSessionWithDuration(sessionStartTimeRef.current, elapsed);
+  }, [saveSessionWithDuration]);
+
+  // Drift recovery on page reload — save completed sessions
   useEffect(() => {
     const loadedSettings = loadSettings();
     setSettings(loadedSettings);
@@ -226,17 +316,43 @@ export function TimerView({
             setSessionStartTime(new Date(saved.sessionStartTime));
           }
         } else {
-          setSecondsLeft(getModeDurationStatic(saved.mode));
+          // Timer expired while page was closed
+          if (saved.mode === "work" && saved.sessionStartTime) {
+            const totalDuration = getModeDurationStatic(saved.mode);
+            saveSessionWithDuration(
+              new Date(saved.sessionStartTime),
+              totalDuration,
+            );
+            const newCount = saved.sessionsCompleted + 1;
+            setSessionsCompleted(newCount);
+            toast.success("Your pomodoro completed while you were away!");
+            playCompletionBeep();
+            showBrowserNotification("Pomodoro Complete!", "Your session was saved.");
+            if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
+              setMode("longBreak");
+              setSecondsLeft(loadedSettings.longBreakMinutes * 60);
+            } else {
+              setMode("break");
+              setSecondsLeft(loadedSettings.breakMinutes * 60);
+            }
+          } else if (saved.mode !== "work") {
+            toast.success("Break over! Ready to focus?");
+            setMode("work");
+            setSecondsLeft(loadedSettings.workMinutes * 60);
+          } else {
+            setSecondsLeft(getModeDurationStatic(saved.mode));
+          }
           setIsRunning(false);
         }
       } else {
         setSecondsLeft(saved.secondsLeft);
       }
     } else {
-      // No saved state — use loaded settings for initial duration
       setSecondsLeft(loadedSettings.workMinutes * 60);
     }
+    requestNotificationPermission();
     setInitialized(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -250,6 +366,54 @@ export function TimerView({
       savedAt: Date.now(),
     });
   }, [mode, secondsLeft, isRunning, sessionsCompleted, sessionStartTime, initialized]);
+
+  // Page Visibility API — handle screen sleep/wake
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      if (!isRunningRef.current) return;
+
+      const saved = loadTimerState();
+      if (!saved || !saved.isRunning) return;
+
+      const elapsed = Math.floor((Date.now() - saved.savedAt) / 1000);
+      const remaining = saved.secondsLeft - elapsed;
+
+      if (remaining > 0) {
+        setSecondsLeft(remaining);
+      } else {
+        // Timer expired during sleep
+        if (modeRef.current === "work" && sessionStartTimeRef.current) {
+          const totalDuration = getModeDurationStatic(modeRef.current);
+          saveSessionWithDuration(sessionStartTimeRef.current, totalDuration);
+          setSessionStartTime(null);
+          const newCount = sessionsCompletedRef.current + 1;
+          setSessionsCompleted(newCount);
+          toast.success("Pomodoro complete! Take a break.");
+          playCompletionBeep();
+          showBrowserNotification("Pomodoro Complete!", "Time for a break.");
+          if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
+            setMode("longBreak");
+            setSecondsLeft(settings.longBreakMinutes * 60);
+          } else {
+            setMode("break");
+            setSecondsLeft(settings.breakMinutes * 60);
+          }
+          setIsRunning(false);
+        } else if (modeRef.current !== "work") {
+          toast.success("Break over! Ready to focus?");
+          setMode("work");
+          setSecondsLeft(settings.workMinutes * 60);
+          setIsRunning(false);
+          playCompletionBeep();
+          showBrowserNotification("Break Over!", "Ready to focus?");
+        }
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [saveSessionWithDuration, settings]);
 
   const partnerMinutes = partnerDeepWork.reduce(
     (sum, s) => sum + s.duration_minutes,
@@ -304,30 +468,6 @@ export function TimerView({
     }
   }
 
-  const saveSession = useCallback(async () => {
-    if (!sessionStartTime || mode !== "work") return;
-
-    const endTime = new Date();
-    const durationMs = endTime.getTime() - sessionStartTime.getTime();
-    const durationMinutes = Math.round(durationMs / 60000);
-
-    if (durationMinutes < 1) return;
-
-    try {
-      await supabase.from("deep_work_sessions").insert({
-        user_id: userId,
-        date: today,
-        started_at: sessionStartTime.toISOString(),
-        ended_at: endTime.toISOString(),
-        duration_minutes: durationMinutes,
-        session_type: "pomodoro",
-      });
-      setTodayMinutes((prev) => prev + durationMinutes);
-    } catch {
-      toast.error("Failed to save session");
-    }
-  }, [sessionStartTime, mode, supabase, userId, today]);
-
   const broadcastState = useCallback(
     (s: number, running: boolean, m: TimerMode) => {
       onTimerUpdate?.({ mode: m, secondsLeft: s, isRunning: running });
@@ -342,10 +482,16 @@ export function TimerView({
           if (prev <= 1) {
             setIsRunning(false);
             if (mode === "work") {
-              saveSession();
+              const totalDuration = getModeDuration(mode);
+              if (sessionStartTimeRef.current) {
+                saveSessionWithDuration(sessionStartTimeRef.current, totalDuration);
+              }
+              setSessionStartTime(null);
               const newCount = sessionsCompleted + 1;
               setSessionsCompleted(newCount);
               toast.success("Pomodoro complete! Take a break.");
+              playCompletionBeep();
+              showBrowserNotification("Pomodoro Complete!", "Time for a break.");
 
               if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
                 setMode("longBreak");
@@ -358,6 +504,8 @@ export function TimerView({
               }
             } else {
               toast.success("Break over! Ready to focus?");
+              playCompletionBeep();
+              showBrowserNotification("Break Over!", "Ready to focus?");
               setMode("work");
               broadcastState(settings.workMinutes * 60, false, "work");
               return settings.workMinutes * 60;
@@ -378,11 +526,12 @@ export function TimerView({
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isRunning, mode, sessionsCompleted, saveSession, broadcastState, settings]);
+  }, [isRunning, mode, sessionsCompleted, saveSessionWithDuration, broadcastState, settings]);
 
   function handleStart() {
     if (mode === "work" && !sessionStartTime) {
       setSessionStartTime(new Date());
+      requestNotificationPermission();
     }
     setIsRunning(true);
     broadcastTickRef.current = 0;
@@ -392,10 +541,17 @@ export function TimerView({
   function handlePause() {
     setIsRunning(false);
     broadcastState(secondsLeft, false, mode);
-    if (mode === "work") {
+  }
+
+  function handleStop() {
+    setIsRunning(false);
+    if (mode === "work" && sessionStartTime) {
       saveSession();
-      setSessionStartTime(null);
     }
+    setSessionStartTime(null);
+    const newSeconds = getModeDuration(mode);
+    setSecondsLeft(newSeconds);
+    broadcastState(newSeconds, false, mode);
   }
 
   function handleReset() {
@@ -422,6 +578,8 @@ export function TimerView({
   }
 
   const totalSeconds = getModeDuration(mode);
+  const isPaused = !isRunning && secondsLeft < totalSeconds;
+  const showStopButton = isPaused && mode === "work" && sessionStartTime !== null;
   const isPartnerFocusing = partnerTimer?.isRunning && partnerTimer.mode === "work";
 
   return (
@@ -638,14 +796,27 @@ export function TimerView({
                   Pause
                 </Button>
               ) : (
-                <Button
-                  size="lg"
-                  onClick={handleStart}
-                  className="px-8 rounded-xl bg-gradient-to-r from-flame to-orange-500 text-white shadow-lg shadow-flame/20 hover:shadow-flame/30 hover:brightness-110 transition-all"
-                >
-                  <Play className="h-5 w-5 mr-2" />
-                  {secondsLeft < totalSeconds ? "Resume" : "Start"}
-                </Button>
+                <>
+                  <Button
+                    size="lg"
+                    onClick={handleStart}
+                    className="px-8 rounded-xl bg-gradient-to-r from-flame to-orange-500 text-white shadow-lg shadow-flame/20 hover:shadow-flame/30 hover:brightness-110 transition-all"
+                  >
+                    <Play className="h-5 w-5 mr-2" />
+                    {secondsLeft < totalSeconds ? "Resume" : "Start"}
+                  </Button>
+                  {showStopButton && (
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      onClick={handleStop}
+                      className="px-6 rounded-xl border-red-500/20 bg-red-500/[0.06] hover:bg-red-500/[0.12] text-red-400"
+                    >
+                      <Square className="h-4 w-4 mr-2" />
+                      Stop
+                    </Button>
+                  )}
+                </>
               )}
               <Button
                 size="lg"
