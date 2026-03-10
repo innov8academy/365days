@@ -10,7 +10,7 @@ import {
   STREAK_RECOVERY_DAYS,
 } from "@/lib/constants";
 
-export async function runDailySummary() {
+export async function runDailySummary(targetDate?: string) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -20,7 +20,11 @@ export async function runDailySummary() {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-  const today = new Date().toISOString().split("T")[0];
+  // At the scheduled cron time (23:55 UTC = 05:25 IST next day), the UTC date
+  // matches the IST calendar date that just ended, so this is correct.
+  // For manual triggers, a specific date can be passed to recalculate past days.
+  const today = targetDate ?? new Date().toISOString().split("T")[0];
+  const isBackfill = !!targetDate;
 
   // Get all users
   const { data: profiles } = await supabase.from("profiles").select("id");
@@ -125,8 +129,8 @@ export async function runDailySummary() {
     });
   }
 
-  // Update streak (skip if break day)
-  if (!isBreakDay && streak) {
+  // Update streak (skip if break day or backfilling a past date)
+  if (!isBreakDay && streak && !isBackfill) {
     const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
     const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
 
@@ -141,12 +145,17 @@ export async function runDailySummary() {
         newCount += 1;
         if (newCount > newBest) newBest = newCount;
       } else if (anyMissed) {
-        newStatus = "recovery";
-        newRecoveryDays = STREAK_RECOVERY_DAYS;
-        const missedUser = Object.entries(userDeepWorkStatus).find(
-          ([, v]) => !v
-        );
-        recoveryBy = missedUser ? missedUser[0] : null;
+        if (newCount === 0) {
+          // No streak built yet — just stay at 0, don't penalize with recovery
+          // (nothing to recover)
+        } else {
+          newStatus = "recovery";
+          newRecoveryDays = STREAK_RECOVERY_DAYS;
+          const missedUser = Object.entries(userDeepWorkStatus).find(
+            ([, v]) => !v
+          );
+          recoveryBy = missedUser ? missedUser[0] : null;
+        }
       }
     } else if (streak.status === "recovery") {
       if (allHitTarget) {

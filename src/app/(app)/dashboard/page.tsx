@@ -30,20 +30,20 @@ export default function DashboardPage() {
   const myDeepWorkMinutes = myDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
   const partnerDeepWorkMinutes = partnerDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
 
-  // Calculate today's points live (not from cron)
+  // Calculate today's points live (only if tasks have been written — don't penalize for empty day)
   const streakActive = streak?.status === "active" && (streak?.current_count ?? 0) > 0;
-  const myTodayPoints = calculateDailyPoints({
+  const myTodayPoints = myTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: myTasks.length,
     tasksCompleted: myTasks.filter((t) => t.completed).length,
     deepWorkMinutes: myDeepWorkMinutes,
     streakActive,
-  });
-  const partnerTodayPoints = calculateDailyPoints({
+  }) : 0;
+  const partnerTodayPoints = partnerTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: partnerTasks.length,
     tasksCompleted: partnerTasks.filter((t) => t.completed).length,
     deepWorkMinutes: partnerDeepWorkMinutes,
     streakActive,
-  });
+  }) : 0;
 
   // Historical points from past days (exclude today to avoid double-counting)
   const mySummaries = allSummaries?.filter((s) => s.user_id === user.id && s.date !== today) ?? [];

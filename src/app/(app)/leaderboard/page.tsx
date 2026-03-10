@@ -33,24 +33,24 @@ export default function LeaderboardPage() {
   const today = getToday();
   const streakActive = streak?.status === "active" && (streak?.current_count ?? 0) > 0;
 
-  // Calculate today's points live
+  // Calculate today's points live (only if tasks have been written — don't penalize for empty day)
   const myTasks = allTasks?.filter((t) => t.user_id === user.id) ?? [];
   const partnerTasks = allTasks?.filter((t) => t.user_id !== user.id) ?? [];
   const myDW = allDeepWork?.filter((s) => s.user_id === user.id) ?? [];
   const partnerDW = allDeepWork?.filter((s) => s.user_id !== user.id) ?? [];
 
-  const myTodayPoints = calculateDailyPoints({
+  const myTodayPoints = myTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: myTasks.length,
     tasksCompleted: myTasks.filter((t) => t.completed).length,
     deepWorkMinutes: myDW.reduce((sum, s) => sum + s.duration_minutes, 0),
     streakActive,
-  });
-  const partnerTodayPoints = calculateDailyPoints({
+  }) : 0;
+  const partnerTodayPoints = partnerTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: partnerTasks.length,
     tasksCompleted: partnerTasks.filter((t) => t.completed).length,
     deepWorkMinutes: partnerDW.reduce((sum, s) => sum + s.duration_minutes, 0),
     streakActive,
-  });
+  }) : 0;
 
   let myPoints = 0;
   let partnerPoints = 0;

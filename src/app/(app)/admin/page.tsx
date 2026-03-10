@@ -103,15 +103,18 @@ export default function AdminPage() {
     setActionLoading(null);
   }
 
-  async function triggerDailyCron() {
-    setActionLoading("cron");
+  async function triggerDailyCron(date?: string) {
+    const key = date ? `cron-${date}` : "cron";
+    setActionLoading(key);
     try {
       const res = await fetch("/api/admin/trigger-cron", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(date ? { date } : {}),
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(`Cron ran: ${JSON.stringify(data.results?.map((r: { points: number }) => r.points))}`);
+        toast.success(`Cron ran for ${data.date}: ${JSON.stringify(data.results?.map((r: { points: number }) => r.points))}`);
         await loadCounts();
       } else {
         toast.error(`Cron failed: ${data.error || "Unknown"}`);
@@ -245,9 +248,22 @@ export default function AdminPage() {
             variant="outline"
             className="w-full"
             disabled={actionLoading !== null}
-            onClick={triggerDailyCron}
+            onClick={() => triggerDailyCron()}
           >
-            {actionLoading === "cron" ? "Running..." : "Run Daily Summary Cron (manually)"}
+            {actionLoading === "cron" ? "Running..." : "Run Daily Summary Cron (today)"}
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={actionLoading !== null}
+            onClick={() => {
+              const yesterday = new Date(Date.now() + 5.5 * 60 * 60 * 1000); // IST
+              yesterday.setDate(yesterday.getDate() - 1);
+              const dateStr = yesterday.toISOString().split("T")[0];
+              triggerDailyCron(dateStr);
+            }}
+          >
+            {actionLoading?.startsWith("cron-") ? "Running..." : "Recalculate Yesterday"}
           </Button>
         </CardContent>
       </Card>
