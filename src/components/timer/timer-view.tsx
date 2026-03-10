@@ -30,8 +30,14 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import type { DeepWorkSession } from "@/types/database";
+import {
+  getRemainingSeconds,
+  getTargetEndTime,
+  resolveSavedSecondsLeft,
+} from "@/lib/timer";
 
 type TimerMode = "work" | "break" | "longBreak";
+type TimerCompletionSource = "active" | "background" | "restore";
 
 interface TimerViewProps {
   userId: string;
@@ -69,7 +75,6 @@ function TimerRing({
 
   return (
     <div className="relative inline-flex items-center justify-center">
-      {/* Glow behind ring */}
       {isRunning && mode === "work" && (
         <div className="absolute inset-8 rounded-full bg-flame/[0.06] blur-2xl" />
       )}
@@ -122,13 +127,16 @@ interface TimerSavedState {
   isRunning: boolean;
   sessionsCompleted: number;
   sessionStartTime: string | null;
+  targetEndTime?: number | null;
   savedAt: number;
 }
 
 function saveTimerState(state: TimerSavedState) {
   try {
     localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(state));
-  } catch { /* ignore */ }
+  } catch {
+    // ignore
+  }
 }
 
 function loadTimerState(): TimerSavedState | null {
@@ -158,7 +166,9 @@ const DEFAULT_SETTINGS: TimerSettings = {
 function saveSettings(settings: TimerSettings) {
   try {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch { /* ignore */ }
+  } catch {
+    // ignore
+  }
 }
 
 function loadSettings(): TimerSettings {
@@ -171,39 +181,67 @@ function loadSettings(): TimerSettings {
   }
 }
 
-function getModeDurationStatic(m: TimerMode): number {
-  const settings = loadSettings();
-  switch (m) {
-    case "work": return settings.workMinutes * 60;
-    case "break": return settings.breakMinutes * 60;
-    case "longBreak": return settings.longBreakMinutes * 60;
+interface WindowWithWebkitAudioContext extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
+function ensureAudioContext(audioContextRef: { current: AudioContext | null }): AudioContext | null {
+  try {
+    if (typeof window === "undefined") return null;
+
+    const AudioContextCtor =
+      window.AudioContext ?? (window as WindowWithWebkitAudioContext).webkitAudioContext;
+
+    if (!AudioContextCtor) return null;
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextCtor();
+    }
+
+    return audioContextRef.current;
+  } catch {
+    return null;
   }
 }
 
-function playCompletionBeep() {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
+function primeAudioContext(audioContextRef: { current: AudioContext | null }) {
+  const ctx = ensureAudioContext(audioContextRef);
+  if (!ctx || ctx.state !== "suspended") return;
+
+  void ctx.resume().catch(() => {
+    // Some browsers require another user gesture; the timer still completes visually.
+  });
+}
+
+function playCompletionBeep(audioContextRef: { current: AudioContext | null }) {
+  const ctx = ensureAudioContext(audioContextRef);
+  if (!ctx) return;
+
+  if (ctx.state === "suspended") {
+    void ctx.resume().catch(() => {
+      // Keep the visual completion flow even if the browser blocks audio resume.
+    });
+  }
+
+  const start = ctx.currentTime + 0.02;
+  const notes = [784, 988, 1175];
+
+  notes.forEach((frequency, index) => {
+    const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.connect(gain);
+    const noteStart = start + index * 0.22;
+    const noteEnd = noteStart + 0.18;
+
+    oscillator.connect(gain);
     gain.connect(ctx.destination);
-    osc.frequency.value = 800;
-    osc.type = "sine";
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.5);
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.frequency.value = 1000;
-    osc2.type = "sine";
-    gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.6);
-    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.1);
-    osc2.start(ctx.currentTime + 0.6);
-    osc2.stop(ctx.currentTime + 1.1);
-  } catch { /* Audio not available */ }
+    oscillator.frequency.value = frequency;
+    oscillator.type = "sine";
+    gain.gain.setValueAtTime(0.0001, noteStart);
+    gain.gain.exponentialRampToValueAtTime(0.24, noteStart + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
+    oscillator.start(noteStart);
+    oscillator.stop(noteEnd);
+  });
 }
 
 function showBrowserNotification(title: string, body: string) {
@@ -228,48 +266,74 @@ export function TimerView({
   onTimerUpdate,
   partnerTimer,
 }: TimerViewProps) {
+  const initialSettings = loadSettings();
+
   const [initialized, setInitialized] = useState(false);
   const [mode, setMode] = useState<TimerMode>("work");
-  const [secondsLeft, setSecondsLeft] = useState(POMODORO_WORK_MINUTES * 60);
+  const [secondsLeft, setSecondsLeft] = useState(initialSettings.workMinutes * 60);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [todayMinutes, setTodayMinutes] = useState(
-    myDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0)
+    myDeepWork.reduce((sum, session) => sum + session.duration_minutes, 0)
   );
-  const [hitTarget, setHitTarget] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState<TimerSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<TimerSettings>(initialSettings);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const broadcastTickRef = useRef(0);
   const secondsLeftRef = useRef(secondsLeft);
   const modeRef = useRef(mode);
   const sessionsCompletedRef = useRef(sessionsCompleted);
   const sessionStartTimeRef = useRef(sessionStartTime);
   const isRunningRef = useRef(isRunning);
+  const targetEndTimeRef = useRef<number | null>(null);
+  const settingsRef = useRef(settings);
+  const hitTargetRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const lastSavedSessionKeyRef = useRef<string | null>(null);
   const supabase = createClient();
 
-  // Keep refs in sync
-  useEffect(() => { secondsLeftRef.current = secondsLeft; }, [secondsLeft]);
-  useEffect(() => { modeRef.current = mode; }, [mode]);
-  useEffect(() => { sessionsCompletedRef.current = sessionsCompleted; }, [sessionsCompleted]);
-  useEffect(() => { sessionStartTimeRef.current = sessionStartTime; }, [sessionStartTime]);
-  useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+  useEffect(() => {
+    secondsLeftRef.current = secondsLeft;
+  }, [secondsLeft]);
 
-  // Save a session with timer-based duration (not wall clock)
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    sessionsCompletedRef.current = sessionsCompleted;
+  }, [sessionsCompleted]);
+
+  useEffect(() => {
+    sessionStartTimeRef.current = sessionStartTime;
+  }, [sessionStartTime]);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   const saveSessionWithDuration = useCallback(async (
     startTime: Date,
     elapsedSeconds: number,
     maxMinutes?: number,
   ) => {
-    const cap = maxMinutes ?? settings.workMinutes;
+    const sessionKey = `${userId}:${startTime.toISOString()}`;
+    if (lastSavedSessionKeyRef.current === sessionKey) return;
+
+    const cap = maxMinutes ?? settingsRef.current.workMinutes;
     const durationMinutes = Math.min(
       Math.max(1, Math.round(elapsedSeconds / 60)),
       cap,
     );
 
     if (durationMinutes < 1) return;
+
+    lastSavedSessionKeyRef.current = sessionKey;
 
     const endTime = new Date();
     try {
@@ -281,168 +345,235 @@ export function TimerView({
         duration_minutes: durationMinutes,
         session_type: "pomodoro",
       });
+
       setTodayMinutes((prev) => prev + durationMinutes);
     } catch {
+      if (lastSavedSessionKeyRef.current === sessionKey) {
+        lastSavedSessionKeyRef.current = null;
+      }
       toast.error("Failed to save session");
     }
-  }, [supabase, userId, today, settings.workMinutes]);
+  }, [supabase, today, userId]);
 
   const saveSession = useCallback(async () => {
     if (!sessionStartTimeRef.current || modeRef.current !== "work") return;
-    const totalSec = getModeDurationStatic(modeRef.current);
-    const elapsed = totalSec - secondsLeftRef.current;
-    if (elapsed < 60) return;
-    await saveSessionWithDuration(sessionStartTimeRef.current, elapsed);
+
+    const elapsedSeconds = Math.max(
+      0,
+      settingsRef.current.workMinutes * 60 - secondsLeftRef.current,
+    );
+
+    if (elapsedSeconds < 60) return;
+
+    await saveSessionWithDuration(
+      sessionStartTimeRef.current,
+      elapsedSeconds,
+      settingsRef.current.workMinutes,
+    );
   }, [saveSessionWithDuration]);
 
-  // Drift recovery on page reload — save completed sessions
-  useEffect(() => {
-    const loadedSettings = loadSettings();
-    setSettings(loadedSettings);
+  const broadcastState = useCallback(
+    (nextSeconds: number, running: boolean, nextMode: TimerMode) => {
+      onTimerUpdate?.({ mode: nextMode, secondsLeft: nextSeconds, isRunning: running });
+    },
+    [onTimerUpdate]
+  );
 
+  const applyTimerState = useCallback(
+    (nextMode: TimerMode, nextSeconds: number, running: boolean) => {
+      modeRef.current = nextMode;
+      secondsLeftRef.current = nextSeconds;
+      isRunningRef.current = running;
+      targetEndTimeRef.current = running ? getTargetEndTime(nextSeconds) : null;
+      setMode(nextMode);
+      setSecondsLeft(nextSeconds);
+      setIsRunning(running);
+      broadcastState(nextSeconds, running, nextMode);
+    },
+    [broadcastState]
+  );
+
+  const finishTimer = useCallback(
+    (
+      source: TimerCompletionSource,
+      overrides?: {
+        mode?: TimerMode;
+        sessionStartTime?: Date | null;
+        sessionsCompleted?: number;
+      },
+    ) => {
+      const completedMode = overrides?.mode ?? modeRef.current;
+      const completedSessionStartTime = overrides?.sessionStartTime ?? sessionStartTimeRef.current;
+      const completedSessions = overrides?.sessionsCompleted ?? sessionsCompletedRef.current;
+      const currentSettings = settingsRef.current;
+
+      targetEndTimeRef.current = null;
+      isRunningRef.current = false;
+      setIsRunning(false);
+      setSessionStartTime(null);
+      sessionStartTimeRef.current = null;
+
+      if (completedMode === "work") {
+        if (completedSessionStartTime) {
+          void saveSessionWithDuration(
+            completedSessionStartTime,
+            currentSettings.workMinutes * 60,
+            currentSettings.workMinutes,
+          );
+        }
+
+        const newCount = completedSessions + 1;
+        sessionsCompletedRef.current = newCount;
+        setSessionsCompleted(newCount);
+
+        toast.success(
+          source === "restore"
+            ? "Your pomodoro completed while you were away!"
+            : "Pomodoro complete! Take a break.",
+        );
+        playCompletionBeep(audioContextRef);
+        showBrowserNotification("Pomodoro Complete!", "Time for a break.");
+
+        if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
+          applyTimerState("longBreak", currentSettings.longBreakMinutes * 60, false);
+        } else {
+          applyTimerState("break", currentSettings.breakMinutes * 60, false);
+        }
+        return;
+      }
+
+      toast.success("Break over! Ready to focus?");
+      playCompletionBeep(audioContextRef);
+      showBrowserNotification("Break Over!", "Ready to focus?");
+      applyTimerState("work", currentSettings.workMinutes * 60, false);
+    },
+    [applyTimerState, saveSessionWithDuration]
+  );
+
+  const syncRunningTimer = useCallback(
+    (source: TimerCompletionSource) => {
+      if (!isRunningRef.current || targetEndTimeRef.current === null) return;
+
+      const remaining = getRemainingSeconds(targetEndTimeRef.current);
+      if (remaining <= 0) {
+        finishTimer(source);
+        return;
+      }
+
+      if (remaining === secondsLeftRef.current) return;
+
+      secondsLeftRef.current = remaining;
+      setSecondsLeft(remaining);
+
+      if (remaining <= 5 || remaining % 15 === 0) {
+        broadcastState(remaining, true, modeRef.current);
+      }
+    },
+    [broadcastState, finishTimer]
+  );
+
+  useEffect(() => {
     const saved = loadTimerState();
     if (saved) {
+      const restoredStartTime = saved.sessionStartTime ? new Date(saved.sessionStartTime) : null;
+
+      modeRef.current = saved.mode;
+      sessionsCompletedRef.current = saved.sessionsCompleted;
+      sessionStartTimeRef.current = restoredStartTime;
+      secondsLeftRef.current = saved.secondsLeft;
+
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMode(saved.mode);
       setSessionsCompleted(saved.sessionsCompleted);
+      setSessionStartTime(restoredStartTime);
 
       if (saved.isRunning) {
-        const elapsed = Math.floor((Date.now() - saved.savedAt) / 1000);
-        const remaining = saved.secondsLeft - elapsed;
+        const remaining = resolveSavedSecondsLeft(saved);
 
         if (remaining > 0) {
+          secondsLeftRef.current = remaining;
+          targetEndTimeRef.current =
+            typeof saved.targetEndTime === "number"
+              ? saved.targetEndTime
+              : getTargetEndTime(remaining);
+          isRunningRef.current = true;
           setSecondsLeft(remaining);
           setIsRunning(true);
-          if (saved.sessionStartTime) {
-            setSessionStartTime(new Date(saved.sessionStartTime));
-          }
         } else {
-          // Timer expired while page was closed
-          if (saved.mode === "work" && saved.sessionStartTime) {
-            const totalDuration = getModeDurationStatic(saved.mode);
-            saveSessionWithDuration(
-              new Date(saved.sessionStartTime),
-              totalDuration,
-            );
-            const newCount = saved.sessionsCompleted + 1;
-            setSessionsCompleted(newCount);
-            toast.success("Your pomodoro completed while you were away!");
-            playCompletionBeep();
-            showBrowserNotification("Pomodoro Complete!", "Your session was saved.");
-            if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
-              setMode("longBreak");
-              setSecondsLeft(loadedSettings.longBreakMinutes * 60);
-            } else {
-              setMode("break");
-              setSecondsLeft(loadedSettings.breakMinutes * 60);
-            }
-          } else if (saved.mode !== "work") {
-            toast.success("Break over! Ready to focus?");
-            setMode("work");
-            setSecondsLeft(loadedSettings.workMinutes * 60);
-          } else {
-            setSecondsLeft(getModeDurationStatic(saved.mode));
-          }
-          setIsRunning(false);
+          secondsLeftRef.current = 0;
+          setSecondsLeft(0);
+          finishTimer("restore", {
+            mode: saved.mode,
+            sessionStartTime: restoredStartTime,
+            sessionsCompleted: saved.sessionsCompleted,
+          });
         }
       } else {
+        targetEndTimeRef.current = null;
+        isRunningRef.current = false;
         setSecondsLeft(saved.secondsLeft);
+        setIsRunning(false);
       }
-    } else {
-      setSecondsLeft(loadedSettings.workMinutes * 60);
     }
+
     requestNotificationPermission();
     setInitialized(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [finishTimer]);
 
   useEffect(() => {
     if (!initialized) return;
+
+    const targetEndTime = isRunning
+      ? (targetEndTimeRef.current ?? getTargetEndTime(secondsLeft))
+      : null;
+
+    if (isRunning && targetEndTimeRef.current === null) {
+      targetEndTimeRef.current = targetEndTime;
+    }
+
     saveTimerState({
       mode,
       secondsLeft,
       isRunning,
       sessionsCompleted,
       sessionStartTime: sessionStartTime?.toISOString() ?? null,
+      targetEndTime,
       savedAt: Date.now(),
     });
-  }, [mode, secondsLeft, isRunning, sessionsCompleted, sessionStartTime, initialized]);
+  }, [initialized, isRunning, mode, secondsLeft, sessionStartTime, sessionsCompleted]);
 
-  // Page Visibility API — handle screen sleep/wake
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.visibilityState !== "visible") return;
-      if (!isRunningRef.current) return;
-
-      const saved = loadTimerState();
-      if (!saved || !saved.isRunning) return;
-
-      const elapsed = Math.floor((Date.now() - saved.savedAt) / 1000);
-      const remaining = saved.secondsLeft - elapsed;
-
-      if (remaining > 0) {
-        setSecondsLeft(remaining);
-      } else {
-        // Timer expired during sleep
-        if (modeRef.current === "work" && sessionStartTimeRef.current) {
-          const totalDuration = getModeDurationStatic(modeRef.current);
-          saveSessionWithDuration(sessionStartTimeRef.current, totalDuration);
-          setSessionStartTime(null);
-          const newCount = sessionsCompletedRef.current + 1;
-          setSessionsCompleted(newCount);
-          toast.success("Pomodoro complete! Take a break.");
-          playCompletionBeep();
-          showBrowserNotification("Pomodoro Complete!", "Time for a break.");
-          if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
-            setMode("longBreak");
-            setSecondsLeft(settings.longBreakMinutes * 60);
-          } else {
-            setMode("break");
-            setSecondsLeft(settings.breakMinutes * 60);
-          }
-          setIsRunning(false);
-        } else if (modeRef.current !== "work") {
-          toast.success("Break over! Ready to focus?");
-          setMode("work");
-          setSecondsLeft(settings.workMinutes * 60);
-          setIsRunning(false);
-          playCompletionBeep();
-          showBrowserNotification("Break Over!", "Ready to focus?");
-        }
-      }
+      syncRunningTimer("background");
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [saveSessionWithDuration, settings]);
+  }, [syncRunningTimer]);
 
   const partnerMinutes = partnerDeepWork.reduce(
-    (sum, s) => sum + s.duration_minutes,
-    0
+    (sum, session) => sum + session.duration_minutes,
+    0,
   );
 
-  const myProgress = Math.min(
-    (todayMinutes / DEEP_WORK_DAILY_TARGET) * 100,
-    100
-  );
-  const partnerProgress = Math.min(
-    (partnerMinutes / DEEP_WORK_DAILY_TARGET) * 100,
-    100
-  );
+  const myProgress = Math.min((todayMinutes / DEEP_WORK_DAILY_TARGET) * 100, 100);
+  const partnerProgress = Math.min((partnerMinutes / DEEP_WORK_DAILY_TARGET) * 100, 100);
 
   useEffect(() => {
-    if (todayMinutes >= DEEP_WORK_DAILY_TARGET && !hitTarget) {
-      setHitTarget(true);
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ["#f59e0b", "#ef4444", "#10b981"],
-      });
-    }
-  }, [todayMinutes, hitTarget]);
+    if (todayMinutes < DEEP_WORK_DAILY_TARGET || hitTargetRef.current) return;
 
-  function getModeDuration(m: TimerMode): number {
-    switch (m) {
+    hitTargetRef.current = true;
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ["#f59e0b", "#ef4444", "#10b981"],
+    });
+  }, [todayMinutes]);
+
+  function getModeDuration(nextMode: TimerMode): number {
+    switch (nextMode) {
       case "work":
         return settings.workMinutes * 60;
       case "break":
@@ -454,125 +585,117 @@ export function TimerView({
 
   function updateSettings(newSettings: TimerSettings) {
     setSettings(newSettings);
+    settingsRef.current = newSettings;
     saveSettings(newSettings);
-    // If timer isn't running, update the current duration to match
+
     if (!isRunning) {
       const newDuration = (() => {
         switch (mode) {
-          case "work": return newSettings.workMinutes * 60;
-          case "break": return newSettings.breakMinutes * 60;
-          case "longBreak": return newSettings.longBreakMinutes * 60;
+          case "work":
+            return newSettings.workMinutes * 60;
+          case "break":
+            return newSettings.breakMinutes * 60;
+          case "longBreak":
+            return newSettings.longBreakMinutes * 60;
         }
       })();
+
+      secondsLeftRef.current = newDuration;
       setSecondsLeft(newDuration);
     }
   }
 
-  const broadcastState = useCallback(
-    (s: number, running: boolean, m: TimerMode) => {
-      onTimerUpdate?.({ mode: m, secondsLeft: s, isRunning: running });
-    },
-    [onTimerUpdate]
-  );
-
   useEffect(() => {
-    if (isRunning) {
-      intervalRef.current = setInterval(() => {
-        setSecondsLeft((prev) => {
-          if (prev <= 1) {
-            setIsRunning(false);
-            if (mode === "work") {
-              const totalDuration = getModeDuration(mode);
-              if (sessionStartTimeRef.current) {
-                saveSessionWithDuration(sessionStartTimeRef.current, totalDuration);
-              }
-              setSessionStartTime(null);
-              const newCount = sessionsCompleted + 1;
-              setSessionsCompleted(newCount);
-              toast.success("Pomodoro complete! Take a break.");
-              playCompletionBeep();
-              showBrowserNotification("Pomodoro Complete!", "Time for a break.");
+    if (!isRunning) return;
 
-              if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
-                setMode("longBreak");
-                broadcastState(settings.longBreakMinutes * 60, false, "longBreak");
-                return settings.longBreakMinutes * 60;
-              } else {
-                setMode("break");
-                broadcastState(settings.breakMinutes * 60, false, "break");
-                return settings.breakMinutes * 60;
-              }
-            } else {
-              toast.success("Break over! Ready to focus?");
-              playCompletionBeep();
-              showBrowserNotification("Break Over!", "Ready to focus?");
-              setMode("work");
-              broadcastState(settings.workMinutes * 60, false, "work");
-              return settings.workMinutes * 60;
-            }
-          }
-
-          broadcastTickRef.current += 1;
-          if (broadcastTickRef.current >= 15) {
-            broadcastTickRef.current = 0;
-            broadcastState(prev - 1, true, mode);
-          }
-
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    intervalRef.current = setInterval(() => {
+      syncRunningTimer("active");
+    }, 1000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isRunning, mode, sessionsCompleted, saveSessionWithDuration, broadcastState, settings]);
+  }, [isRunning, syncRunningTimer]);
 
   function handleStart() {
-    if (mode === "work" && !sessionStartTime) {
-      setSessionStartTime(new Date());
+    if (modeRef.current === "work" && !sessionStartTimeRef.current) {
+      const startTime = new Date();
+      sessionStartTimeRef.current = startTime;
+      setSessionStartTime(startTime);
       requestNotificationPermission();
+      lastSavedSessionKeyRef.current = null;
     }
+
+    targetEndTimeRef.current = getTargetEndTime(secondsLeftRef.current);
+    isRunningRef.current = true;
     setIsRunning(true);
-    broadcastTickRef.current = 0;
-    broadcastState(secondsLeft, true, mode);
+    primeAudioContext(audioContextRef);
+    broadcastState(secondsLeftRef.current, true, modeRef.current);
   }
 
   function handlePause() {
+    if (targetEndTimeRef.current !== null) {
+      const remaining = getRemainingSeconds(targetEndTimeRef.current);
+      secondsLeftRef.current = remaining;
+      setSecondsLeft(remaining);
+    }
+
+    targetEndTimeRef.current = null;
+    isRunningRef.current = false;
     setIsRunning(false);
-    broadcastState(secondsLeft, false, mode);
+    broadcastState(secondsLeftRef.current, false, modeRef.current);
   }
 
   function handleStop() {
+    targetEndTimeRef.current = null;
+    isRunningRef.current = false;
     setIsRunning(false);
-    if (mode === "work" && sessionStartTime) {
-      saveSession();
+
+    if (modeRef.current === "work" && sessionStartTimeRef.current) {
+      void saveSession();
     }
+
     setSessionStartTime(null);
-    const newSeconds = getModeDuration(mode);
+    sessionStartTimeRef.current = null;
+    const newSeconds = getModeDuration(modeRef.current);
+    secondsLeftRef.current = newSeconds;
     setSecondsLeft(newSeconds);
-    broadcastState(newSeconds, false, mode);
+    broadcastState(newSeconds, false, modeRef.current);
   }
 
   function handleReset() {
+    targetEndTimeRef.current = null;
+    isRunningRef.current = false;
     setIsRunning(false);
-    if (mode === "work" && sessionStartTime) {
-      saveSession();
+
+    if (modeRef.current === "work" && sessionStartTimeRef.current) {
+      void saveSession();
     }
+
     setSessionStartTime(null);
-    const newSeconds = getModeDuration(mode);
+    sessionStartTimeRef.current = null;
+    const newSeconds = getModeDuration(modeRef.current);
+    secondsLeftRef.current = newSeconds;
     setSecondsLeft(newSeconds);
-    broadcastState(newSeconds, false, mode);
+    broadcastState(newSeconds, false, modeRef.current);
   }
 
   function switchMode(newMode: TimerMode) {
-    if (isRunning && mode === "work") {
-      saveSession();
+    const wasRunning = isRunningRef.current;
+    targetEndTimeRef.current = null;
+    isRunningRef.current = false;
+
+    if (wasRunning && modeRef.current === "work") {
+      void saveSession();
     }
+
     setIsRunning(false);
     setSessionStartTime(null);
+    sessionStartTimeRef.current = null;
+    modeRef.current = newMode;
     setMode(newMode);
     const newSeconds = getModeDuration(newMode);
+    secondsLeftRef.current = newSeconds;
     setSecondsLeft(newSeconds);
     broadcastState(newSeconds, false, newMode);
   }
@@ -924,3 +1047,11 @@ export function TimerView({
     </div>
   );
 }
+
+
+
+
+
+
+
+

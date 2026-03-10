@@ -7,6 +7,7 @@ import {
   DEEP_WORK_DAILY_TARGET,
 } from "../constants";
 import { formatTime, formatMinutesToHours } from "../dates";
+import { getRemainingSeconds, getTargetEndTime, resolveSavedSecondsLeft } from "../timer";
 
 /**
  * Tests for pomodoro timer business logic:
@@ -16,13 +17,12 @@ import { formatTime, formatMinutesToHours } from "../dates";
  * - Deep work integration
  */
 
-// Extracted timer logic for testing
 type TimerMode = "work" | "break" | "longBreak";
 
 function getDuration(mode: TimerMode): number {
   switch (mode) {
     case "work":
-      return POMODORO_WORK_MINUTES * 60; // in seconds
+      return POMODORO_WORK_MINUTES * 60;
     case "break":
       return POMODORO_BREAK_MINUTES * 60;
     case "longBreak":
@@ -35,13 +35,12 @@ function getNextMode(
   completedSessions: number
 ): TimerMode {
   if (currentMode === "work") {
-    // After a work session, check if it's time for a long break
     if (completedSessions > 0 && completedSessions % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
       return "longBreak";
     }
     return "break";
   }
-  // After any break, go back to work
+
   return "work";
 }
 
@@ -72,42 +71,41 @@ describe("pomodoro timer", () => {
   });
 
   describe("mode transitions", () => {
-    it("work → break after 1st session", () => {
+    it("work -> break after 1st session", () => {
       expect(getNextMode("work", 1)).toBe("break");
     });
 
-    it("work → break after 2nd session", () => {
+    it("work -> break after 2nd session", () => {
       expect(getNextMode("work", 2)).toBe("break");
     });
 
-    it("work → break after 3rd session", () => {
+    it("work -> break after 3rd session", () => {
       expect(getNextMode("work", 3)).toBe("break");
     });
 
-    it("work → longBreak after 4th session", () => {
+    it("work -> longBreak after 4th session", () => {
       expect(getNextMode("work", 4)).toBe("longBreak");
     });
 
-    it("work → break after 5th session (cycle resets)", () => {
+    it("work -> break after 5th session (cycle resets)", () => {
       expect(getNextMode("work", 5)).toBe("break");
     });
 
-    it("work → longBreak after 8th session (another cycle)", () => {
+    it("work -> longBreak after 8th session (another cycle)", () => {
       expect(getNextMode("work", 8)).toBe("longBreak");
     });
 
-    it("break → work always", () => {
+    it("break -> work always", () => {
       expect(getNextMode("break", 1)).toBe("work");
       expect(getNextMode("break", 4)).toBe("work");
     });
 
-    it("longBreak → work always", () => {
+    it("longBreak -> work always", () => {
       expect(getNextMode("longBreak", 4)).toBe("work");
       expect(getNextMode("longBreak", 8)).toBe("work");
     });
 
     it("first session (0 completed) goes to short break", () => {
-      // completedSessions = 0 is not divisible by 4 (0 % 4 === 0 but we check > 0)
       expect(getNextMode("work", 0)).toBe("break");
     });
   });
@@ -127,7 +125,6 @@ describe("pomodoro timer", () => {
 
     it("need ~8 sessions for 3h daily target (180 min)", () => {
       const needed = sessionsNeededForTarget(DEEP_WORK_DAILY_TARGET);
-      // 180 / 25 = 7.2 → ceil = 8
       expect(needed).toBe(8);
     });
 
@@ -150,7 +147,7 @@ describe("pomodoro timer", () => {
       const shortBreakTime = POMODORO_BREAK_MINUTES * 3;
       const longBreakTime = POMODORO_LONG_BREAK_MINUTES;
       const total = workTime + shortBreakTime + longBreakTime;
-      expect(total).toBe(130); // 2h 10m
+      expect(total).toBe(130);
     });
 
     it("two full cycles take ~4h 20m total", () => {
@@ -158,11 +155,37 @@ describe("pomodoro timer", () => {
       const shortBreakTime = POMODORO_BREAK_MINUTES * 6;
       const longBreakTime = POMODORO_LONG_BREAK_MINUTES * 2;
       const total = workTime + shortBreakTime + longBreakTime;
-      expect(total).toBe(260); // 4h 20m
+      expect(total).toBe(260);
     });
 
     it("deep work only: 2 cycles = 200 min work time (excludes breaks)", () => {
       expect(calculateDeepWorkFromSessions(8)).toBe(200);
+    });
+  });
+
+  describe("background timer recovery", () => {
+    it("keeps counting down based on wall clock time", () => {
+      const now = 10_000;
+      const targetEndTime = getTargetEndTime(90, now);
+
+      expect(getRemainingSeconds(targetEndTime, now + 30_000)).toBe(60);
+      expect(getRemainingSeconds(targetEndTime, now + 95_000)).toBe(0);
+    });
+
+    it("prefers the persisted target end time over throttled ticks", () => {
+      const now = 1_500_000;
+      const targetEndTime = now + 60_000;
+
+      expect(
+        resolveSavedSecondsLeft(
+          {
+            secondsLeft: 1499,
+            savedAt: now - 1_000,
+            targetEndTime,
+          },
+          now,
+        ),
+      ).toBe(60);
     });
   });
 
