@@ -20,8 +20,10 @@ export async function runDailySummary(targetDate?: string) {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-  // At the scheduled cron time (23:55 UTC = 05:25 IST next day), the UTC date
-  // matches the IST calendar date that just ended, so this is correct.
+  // Cron runs at 18:35 UTC (00:05 IST). At that time, the UTC date equals
+  // the IST date that just ended (e.g., 18:35 UTC Mar 10 = 00:05 IST Mar 11,
+  // and we want to process Mar 10). This works for any cron time between
+  // 18:30 UTC (midnight IST) and 23:59 UTC.
   // For manual triggers, a specific date can be passed to recalculate past days.
   const today = targetDate ?? new Date().toISOString().split("T")[0];
 
@@ -128,8 +130,9 @@ export async function runDailySummary(targetDate?: string) {
     });
   }
 
-  // Update streak (skip if break day)
-  if (!isBreakDay && streak) {
+  // Update streak (skip if break day or already processed this date)
+  const alreadyProcessed = streak?.last_active_date && streak.last_active_date >= today;
+  if (!isBreakDay && streak && !alreadyProcessed) {
     const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
     const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
 

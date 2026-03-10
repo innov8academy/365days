@@ -3,10 +3,10 @@
 import { useAuth } from "@/lib/hooks/use-auth";
 import { usePresence } from "@/lib/hooks/use-presence";
 import { useTimerBroadcast } from "@/lib/hooks/use-timer-broadcast";
-import { useTodayTasks, useTodayDeepWork, useStreak, useActiveCompetition, useSummaries } from "@/lib/hooks/use-data";
+import { useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useActiveCompetition, useSummaries, useGapFiller } from "@/lib/hooks/use-data";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import { DashboardSkeleton } from "@/components/shared/skeleton-page";
-import { getToday } from "@/lib/dates";
+import { getToday, getYesterday } from "@/lib/dates";
 import { calculateDailyPoints } from "@/lib/points";
 
 export default function DashboardPage() {
@@ -15,9 +15,12 @@ export default function DashboardPage() {
   const { partnerTimer } = useTimerBroadcast(user?.id ?? null);
   const { data: allTasks, isLoading: tasksLoading } = useTodayTasks();
   const { data: allDeepWork, isLoading: dwLoading } = useTodayDeepWork();
+  const { data: yesterdayTasks } = useYesterdayTasks();
+  const { data: yesterdayDeepWork } = useYesterdayDeepWork();
   const { data: streak } = useStreak();
   const { data: competition } = useActiveCompetition();
   const { data: allSummaries } = useSummaries();
+  useGapFiller();
 
   if (tasksLoading || dwLoading || !user) return <DashboardSkeleton />;
 
@@ -46,10 +49,40 @@ export default function DashboardPage() {
   }) : 0;
 
   // Historical points from past days (exclude today to avoid double-counting)
+  const yesterday = getYesterday();
   const mySummaries = allSummaries?.filter((s) => s.user_id === user.id && s.date !== today) ?? [];
   const partnerSummaries = allSummaries?.filter((s) => s.user_id !== user.id && s.date !== today) ?? [];
-  const myPoints = mySummaries.reduce((sum, s) => sum + s.points_earned, 0) + myTodayPoints;
-  const partnerPoints = partnerSummaries.reduce((sum, s) => sum + s.points_earned, 0) + partnerTodayPoints;
+  let myPoints = mySummaries.reduce((sum, s) => sum + s.points_earned, 0) + myTodayPoints;
+  let partnerPoints = partnerSummaries.reduce((sum, s) => sum + s.points_earned, 0) + partnerTodayPoints;
+
+  // Gap fallback: if yesterday's summary is missing (cron hasn't run yet), calculate live
+  const hasMyYesterdaySummary = mySummaries.some((s) => s.date === yesterday);
+  const hasPartnerYesterdaySummary = partnerSummaries.some((s) => s.date === yesterday);
+
+  if (!hasMyYesterdaySummary && yesterdayTasks && yesterdayDeepWork) {
+    const myYTasks = yesterdayTasks.filter((t) => t.user_id === user.id);
+    const myYDW = yesterdayDeepWork.filter((s) => s.user_id === user.id);
+    if (myYTasks.length > 0) {
+      myPoints += calculateDailyPoints({
+        tasksTotal: myYTasks.length,
+        tasksCompleted: myYTasks.filter((t) => t.completed).length,
+        deepWorkMinutes: myYDW.reduce((sum, s) => sum + s.duration_minutes, 0),
+        streakActive,
+      });
+    }
+  }
+  if (!hasPartnerYesterdaySummary && yesterdayTasks && yesterdayDeepWork) {
+    const pYTasks = yesterdayTasks.filter((t) => t.user_id !== user.id);
+    const pYDW = yesterdayDeepWork.filter((s) => s.user_id !== user.id);
+    if (pYTasks.length > 0) {
+      partnerPoints += calculateDailyPoints({
+        tasksTotal: pYTasks.length,
+        tasksCompleted: pYTasks.filter((t) => t.completed).length,
+        deepWorkMinutes: pYDW.reduce((sum, s) => sum + s.duration_minutes, 0),
+        streakActive,
+      });
+    }
+  }
 
   return (
     <DashboardView

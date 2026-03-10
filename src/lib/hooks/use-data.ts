@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import useSWR, { mutate } from "swr";
 import { createClient } from "@/lib/supabase/client";
-import { getToday } from "@/lib/dates";
+import { getToday, getYesterday } from "@/lib/dates";
 
 const supabase = createClient();
 
@@ -24,6 +24,26 @@ async function fetchTodayDeepWork() {
     .from("deep_work_sessions")
     .select("*")
     .eq("date", today)
+    .order("started_at", { ascending: false });
+  return data ?? [];
+}
+
+async function fetchYesterdayTasks() {
+  const yesterday = getYesterday();
+  const { data } = await supabase
+    .from("daily_tasks")
+    .select("*")
+    .eq("date", yesterday)
+    .order("created_at");
+  return data ?? [];
+}
+
+async function fetchYesterdayDeepWork() {
+  const yesterday = getYesterday();
+  const { data } = await supabase
+    .from("deep_work_sessions")
+    .select("*")
+    .eq("date", yesterday)
     .order("started_at", { ascending: false });
   return data ?? [];
 }
@@ -79,6 +99,14 @@ export function useTodayDeepWork() {
   return useSWR("today-deepwork", fetchTodayDeepWork, swrOptions);
 }
 
+export function useYesterdayTasks() {
+  return useSWR("yesterday-tasks", fetchYesterdayTasks, swrOptions);
+}
+
+export function useYesterdayDeepWork() {
+  return useSWR("yesterday-deepwork", fetchYesterdayDeepWork, swrOptions);
+}
+
 export function useStreak() {
   return useSWR("streak", fetchStreak, swrOptions);
 }
@@ -93,6 +121,35 @@ export function useSummaries() {
 
 export function useBreaks() {
   return useSWR("breaks", fetchBreaks, swrOptions);
+}
+
+// Auto-trigger daily summary for yesterday if it's missing (gap between midnight and cron)
+export function useGapFiller() {
+  const triggered = useRef(false);
+  const { data: summaries } = useSummaries();
+
+  useEffect(() => {
+    if (triggered.current || !summaries) return;
+
+    const yesterday = getYesterday();
+    const hasYesterdaySummary = summaries.some((s) => s.date === yesterday);
+
+    if (!hasYesterdaySummary) {
+      triggered.current = true;
+      fetch("/api/admin/trigger-cron", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: yesterday }),
+      }).then(() => {
+        // Revalidate all caches after summary is created
+        mutate("summaries");
+        mutate("streak");
+      }).catch(() => {
+        // Silently fail — the frontend fallback still handles display
+        triggered.current = false;
+      });
+    }
+  }, [summaries]);
 }
 
 // Real-time subscription: auto-revalidate SWR caches when DB changes
