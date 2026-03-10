@@ -24,7 +24,6 @@ export async function runDailySummary(targetDate?: string) {
   // matches the IST calendar date that just ended, so this is correct.
   // For manual triggers, a specific date can be passed to recalculate past days.
   const today = targetDate ?? new Date().toISOString().split("T")[0];
-  const isBackfill = !!targetDate;
 
   // Get all users
   const { data: profiles } = await supabase.from("profiles").select("id");
@@ -129,8 +128,8 @@ export async function runDailySummary(targetDate?: string) {
     });
   }
 
-  // Update streak (skip if break day or backfilling a past date)
-  if (!isBreakDay && streak && !isBackfill) {
+  // Update streak (skip if break day)
+  if (!isBreakDay && streak) {
     const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
     const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
 
