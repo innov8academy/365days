@@ -130,9 +130,9 @@ export async function runDailySummary(targetDate?: string) {
     });
   }
 
-  // Update streak (skip if break day or already processed this date)
-  const alreadyProcessed = streak?.last_active_date && streak.last_active_date >= today;
-  if (!isBreakDay && streak && !alreadyProcessed) {
+  // Update streak (skip if break day or processing an older date than what's already been processed)
+  const isOlderDate = streak?.last_active_date && streak.last_active_date > today;
+  if (!isBreakDay && streak && !isOlderDate) {
     const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
     const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
 

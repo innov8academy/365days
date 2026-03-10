@@ -123,33 +123,33 @@ export function useBreaks() {
   return useSWR("breaks", fetchBreaks, swrOptions);
 }
 
-// Auto-trigger daily summary for yesterday if it's missing (gap between midnight and cron)
+// Auto-trigger daily summary for yesterday if summary or streak is stale
 export function useGapFiller() {
   const triggered = useRef(false);
   const { data: summaries } = useSummaries();
+  const { data: streak } = useStreak();
 
   useEffect(() => {
-    if (triggered.current || !summaries) return;
+    if (triggered.current || !summaries || !streak) return;
 
     const yesterday = getYesterday();
     const hasYesterdaySummary = summaries.some((s) => s.date === yesterday);
+    const streakUpToDate = streak.last_active_date >= yesterday;
 
-    if (!hasYesterdaySummary) {
+    if (!hasYesterdaySummary || !streakUpToDate) {
       triggered.current = true;
       fetch("/api/admin/trigger-cron", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date: yesterday }),
       }).then(() => {
-        // Revalidate all caches after summary is created
         mutate("summaries");
         mutate("streak");
       }).catch(() => {
-        // Silently fail — the frontend fallback still handles display
         triggered.current = false;
       });
     }
-  }, [summaries]);
+  }, [summaries, streak]);
 }
 
 // Real-time subscription: auto-revalidate SWR caches when DB changes
