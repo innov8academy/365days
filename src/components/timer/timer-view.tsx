@@ -128,9 +128,9 @@ interface TimerSavedState {
   sessionsCompleted: number;
   sessionStartTime: string | null;
   targetEndTime?: number | null;
+  lastCompletedSessionKey?: string | null;
   savedAt: number;
 }
-
 function saveTimerState(state: TimerSavedState) {
   try {
     localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(state));
@@ -325,6 +325,21 @@ export function TimerView({
     const sessionKey = `${userId}:${startTime.toISOString()}`;
     if (lastSavedSessionKeyRef.current === sessionKey) return;
 
+    const { data: existingSession } = await supabase
+      .from("deep_work_sessions")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("date", today)
+      .eq("started_at", startTime.toISOString())
+      .eq("session_type", "pomodoro")
+      .limit(1)
+      .maybeSingle();
+
+    if (existingSession) {
+      lastSavedSessionKeyRef.current = sessionKey;
+      return;
+    }
+
     const cap = maxMinutes ?? settingsRef.current.workMinutes;
     const durationMinutes = Math.min(
       Math.max(1, Math.round(elapsedSeconds / 60)),
@@ -414,6 +429,29 @@ export function TimerView({
       sessionStartTimeRef.current = null;
 
       if (completedMode === "work") {
+        const newCount = completedSessions + 1;
+        const nextMode =
+          newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0 ? "longBreak" : "break";
+        const nextSeconds =
+          nextMode === "longBreak"
+            ? currentSettings.longBreakMinutes * 60
+            : currentSettings.breakMinutes * 60;
+
+        if (completedSessionStartTime) {
+          lastSavedSessionKeyRef.current = `${userId}:${completedSessionStartTime.toISOString()}`;
+        }
+
+        saveTimerState({
+          mode: nextMode,
+          secondsLeft: nextSeconds,
+          isRunning: false,
+          sessionsCompleted: newCount,
+          sessionStartTime: null,
+          targetEndTime: null,
+          lastCompletedSessionKey: lastSavedSessionKeyRef.current,
+          savedAt: Date.now(),
+        });
+
         if (completedSessionStartTime) {
           void saveSessionWithDuration(
             completedSessionStartTime,
@@ -422,7 +460,6 @@ export function TimerView({
           );
         }
 
-        const newCount = completedSessions + 1;
         sessionsCompletedRef.current = newCount;
         setSessionsCompleted(newCount);
 
@@ -433,21 +470,27 @@ export function TimerView({
         );
         playCompletionBeep(audioContextRef);
         showBrowserNotification("Pomodoro Complete!", "Time for a break.");
-
-        if (newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0) {
-          applyTimerState("longBreak", currentSettings.longBreakMinutes * 60, false);
-        } else {
-          applyTimerState("break", currentSettings.breakMinutes * 60, false);
-        }
+        applyTimerState(nextMode, nextSeconds, false);
         return;
       }
+
+      saveTimerState({
+        mode: "work",
+        secondsLeft: currentSettings.workMinutes * 60,
+        isRunning: false,
+        sessionsCompleted: completedSessions,
+        sessionStartTime: null,
+        targetEndTime: null,
+        lastCompletedSessionKey: lastSavedSessionKeyRef.current,
+        savedAt: Date.now(),
+      });
 
       toast.success("Break over! Ready to focus?");
       playCompletionBeep(audioContextRef);
       showBrowserNotification("Break Over!", "Ready to focus?");
       applyTimerState("work", currentSettings.workMinutes * 60, false);
     },
-    [applyTimerState, saveSessionWithDuration]
+    [applyTimerState, saveSessionWithDuration, userId]
   );
 
   const syncRunningTimer = useCallback(
@@ -476,7 +519,7 @@ export function TimerView({
     const saved = loadTimerState();
     if (saved) {
       const restoredStartTime = saved.sessionStartTime ? new Date(saved.sessionStartTime) : null;
-
+      lastSavedSessionKeyRef.current = saved.lastCompletedSessionKey ?? null;
       modeRef.current = saved.mode;
       sessionsCompletedRef.current = saved.sessionsCompleted;
       sessionStartTimeRef.current = restoredStartTime;
@@ -538,6 +581,7 @@ export function TimerView({
       sessionsCompleted,
       sessionStartTime: sessionStartTime?.toISOString() ?? null,
       targetEndTime,
+      lastCompletedSessionKey: lastSavedSessionKeyRef.current,
       savedAt: Date.now(),
     });
   }, [initialized, isRunning, mode, secondsLeft, sessionStartTime, sessionsCompleted]);
@@ -1047,6 +1091,12 @@ export function TimerView({
     </div>
   );
 }
+
+
+
+
+
+
 
 
 
