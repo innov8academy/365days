@@ -437,9 +437,9 @@ export function TimerView({
             ? currentSettings.longBreakMinutes * 60
             : currentSettings.breakMinutes * 60;
 
-        if (completedSessionStartTime) {
-          lastSavedSessionKeyRef.current = `${userId}:${completedSessionStartTime.toISOString()}`;
-        }
+        const completedSessionKey = completedSessionStartTime
+          ? `${userId}:${completedSessionStartTime.toISOString()}`
+          : lastSavedSessionKeyRef.current;
 
         saveTimerState({
           mode: nextMode,
@@ -448,7 +448,7 @@ export function TimerView({
           sessionsCompleted: newCount,
           sessionStartTime: null,
           targetEndTime: null,
-          lastCompletedSessionKey: lastSavedSessionKeyRef.current,
+          lastCompletedSessionKey: completedSessionKey,
           savedAt: Date.now(),
         });
 
