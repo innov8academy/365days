@@ -291,6 +291,7 @@ export function TimerView({
   const hitTargetRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastSavedSessionKeyRef = useRef<string | null>(null);
+  const finishTimerRef = useRef<typeof finishTimer>(null!);
   const supabase = createClient();
 
   useEffect(() => {
@@ -492,6 +493,7 @@ export function TimerView({
     },
     [applyTimerState, saveSessionWithDuration, userId]
   );
+  finishTimerRef.current = finishTimer;
 
   const syncRunningTimer = useCallback(
     (source: TimerCompletionSource) => {
@@ -515,6 +517,7 @@ export function TimerView({
     [broadcastState, finishTimer]
   );
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const saved = loadTimerState();
     if (saved) {
@@ -545,7 +548,7 @@ export function TimerView({
         } else {
           secondsLeftRef.current = 0;
           setSecondsLeft(0);
-          finishTimer("restore", {
+          finishTimerRef.current("restore", {
             mode: saved.mode,
             sessionStartTime: restoredStartTime,
             sessionsCompleted: saved.sessionsCompleted,
@@ -561,18 +564,14 @@ export function TimerView({
 
     requestNotificationPermission();
     setInitialized(true);
-  }, [finishTimer]);
+  }, []);
 
   useEffect(() => {
     if (!initialized) return;
 
     const targetEndTime = isRunning
-      ? (targetEndTimeRef.current ?? getTargetEndTime(secondsLeft))
+      ? (targetEndTimeRef.current ?? null)
       : null;
-
-    if (isRunning && targetEndTimeRef.current === null) {
-      targetEndTimeRef.current = targetEndTime;
-    }
 
     saveTimerState({
       mode,
@@ -662,6 +661,11 @@ export function TimerView({
   }, [isRunning, syncRunningTimer]);
 
   function handleStart() {
+    if (secondsLeftRef.current <= 0) {
+      finishTimer("active");
+      return;
+    }
+
     if (modeRef.current === "work" && !sessionStartTimeRef.current) {
       const startTime = new Date();
       sessionStartTimeRef.current = startTime;
@@ -680,6 +684,10 @@ export function TimerView({
   function handlePause() {
     if (targetEndTimeRef.current !== null) {
       const remaining = getRemainingSeconds(targetEndTimeRef.current);
+      if (remaining <= 0) {
+        finishTimer("active");
+        return;
+      }
       secondsLeftRef.current = remaining;
       setSecondsLeft(remaining);
     }
