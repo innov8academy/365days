@@ -73,33 +73,41 @@ export async function runDailySummary(targetDate?: string) {
     const deepWorkMinutes =
       sessions?.reduce((sum, s) => sum + s.duration_minutes, 0) ?? 0;
 
-    // Calculate points (all-or-nothing)
+    // On break days, no points are awarded or deducted and streak is maintained
     let points = 0;
-    if (tasksTotal === 0) {
-      points += POINTS_NO_TASKS_PENALTY;
-    } else if (tasksCompleted === tasksTotal) {
-      points += POINTS_FULL_COMPLETION;
+    let hitTarget = true;
+
+    if (isBreakDay) {
+      // Break day: 0 points, streak maintained
+      userDeepWorkStatus[profile.id] = true;
+    } else {
+      // Calculate points (all-or-nothing)
+      if (tasksTotal === 0) {
+        points += POINTS_NO_TASKS_PENALTY;
+      } else if (tasksCompleted === tasksTotal) {
+        points += POINTS_FULL_COMPLETION;
+      }
+
+      // Deep work bonus
+      if (deepWorkMinutes >= POINTS_DEEP_WORK_BONUS_THRESHOLD) {
+        points += POINTS_DEEP_WORK_BONUS;
+      }
+
+      // Streak bonus
+      if (streak?.status === "active" && streak.current_count > 0) {
+        points += POINTS_STREAK_BONUS;
+      }
+
+      // Determine deep work target based on streak status
+      const target =
+        streak?.status === "recovery" &&
+        streak.recovery_required_by === profile.id
+          ? DEEP_WORK_RECOVERY_TARGET
+          : DEEP_WORK_DAILY_TARGET;
+
+      hitTarget = deepWorkMinutes >= target;
+      userDeepWorkStatus[profile.id] = hitTarget;
     }
-
-    // Deep work bonus
-    if (deepWorkMinutes >= POINTS_DEEP_WORK_BONUS_THRESHOLD) {
-      points += POINTS_DEEP_WORK_BONUS;
-    }
-
-    // Streak bonus
-    if (streak?.status === "active" && streak.current_count > 0) {
-      points += POINTS_STREAK_BONUS;
-    }
-
-    // Determine deep work target based on streak status
-    const target =
-      streak?.status === "recovery" &&
-      streak.recovery_required_by === profile.id
-        ? DEEP_WORK_RECOVERY_TARGET
-        : DEEP_WORK_DAILY_TARGET;
-
-    const hitTarget = deepWorkMinutes >= target;
-    userDeepWorkStatus[profile.id] = hitTarget;
 
     const completionPercentage =
       tasksTotal > 0 ? (tasksCompleted / tasksTotal) * 100 : 0;
