@@ -26,6 +26,7 @@ interface AchievementsViewProps {
   streak: Streak | null;
   summaries: DailySummary[];
   myTodayMinutes: number;
+  partnerTodayMinutes: number;
 }
 
 const CATEGORIES: AchievementCategory[] = [
@@ -42,6 +43,7 @@ export function AchievementsView({
   streak,
   summaries,
   myTodayMinutes,
+  partnerTodayMinutes,
 }: AchievementsViewProps) {
   const [viewUser, setViewUser] = useState<"me" | "partner">("me");
   const currentUserId = viewUser === "me" ? me?.id : partner?.id;
@@ -154,7 +156,7 @@ export function AchievementsView({
                       <AchievementProgress
                         achievement={achievement}
                         totalDeepWorkMinutes={totalDeepWorkMinutes}
-                        todayMinutes={viewUser === "me" ? myTodayMinutes : 0}
+                        todayMinutes={viewUser === "me" ? myTodayMinutes : partnerTodayMinutes}
                         currentStreakCount={currentStreakCount}
                         consecutivePerfectDays={consecutivePerfectDays}
                       />

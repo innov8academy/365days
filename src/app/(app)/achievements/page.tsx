@@ -20,7 +20,9 @@ export default function AchievementsPage() {
   if (dwLoading || streakLoading || achievementsLoading || !user) return <StreakSkeleton />;
 
   const myDeepWork = allDeepWork?.filter((s) => s.user_id === user.id) ?? [];
+  const partnerDeepWork = allDeepWork?.filter((s) => s.user_id !== user.id) ?? [];
   const myTodayMinutes = myDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
+  const partnerTodayMinutes = partnerDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
 
   return (
     <AchievementsView
@@ -30,6 +32,7 @@ export default function AchievementsPage() {
       streak={streak ?? null}
       summaries={allSummaries ?? []}
       myTodayMinutes={myTodayMinutes}
+      partnerTodayMinutes={partnerTodayMinutes}
     />
   );
 }
