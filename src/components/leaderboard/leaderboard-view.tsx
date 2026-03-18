@@ -19,6 +19,7 @@ import {
 import { Trophy, Plus, Crown, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { EquippedBadge } from "@/components/badges/equipped-badge";
 import { DEFAULT_POOL_AMOUNT, COMPETITION_DURATION_DAYS } from "@/lib/constants";
 import { format, addDays, differenceInDays } from "date-fns";
 import type { Competition } from "@/types/database";
@@ -33,6 +34,8 @@ interface LeaderboardViewProps {
   myDaysCompleted: number;
   partnerDaysCompleted: number;
   pastCompetitions: Competition[];
+  myEquippedBadge?: string | null;
+  partnerEquippedBadge?: string | null;
 }
 
 export function LeaderboardView({
@@ -44,6 +47,8 @@ export function LeaderboardView({
   myDaysCompleted,
   partnerDaysCompleted,
   pastCompetitions,
+  myEquippedBadge,
+  partnerEquippedBadge,
 }: LeaderboardViewProps) {
   const [poolAmount, setPoolAmount] = useState(DEFAULT_POOL_AMOUNT.toString());
   const [creating, setCreating] = useState(false);
@@ -153,7 +158,10 @@ export function LeaderboardView({
               >
                 {leader === "me" && <Crown className="h-5 w-5 text-amber-400 shrink-0 drop-shadow-[0_0_4px_oklch(0.8_0.18_85/30%)]" />}
                 <div className="flex-1">
-                  <div className="font-medium">{me?.name ?? "You"}</div>
+                  <div className="font-medium flex items-center gap-1.5">
+                    {me?.name ?? "You"}
+                    <EquippedBadge achievementId={myEquippedBadge} />
+                  </div>
                   <div className="text-xs text-muted-foreground/50">
                     {myDaysCompleted} perfect days
                   </div>
@@ -175,8 +183,9 @@ export function LeaderboardView({
                   <Crown className="h-5 w-5 text-amber-400 shrink-0 drop-shadow-[0_0_4px_oklch(0.8_0.18_85/30%)]" />
                 )}
                 <div className="flex-1">
-                  <div className="font-medium">
+                  <div className="font-medium flex items-center gap-1.5">
                     {partner?.name ?? "Partner"}
+                    <EquippedBadge achievementId={partnerEquippedBadge} />
                   </div>
                   <div className="text-xs text-muted-foreground/50">
                     {partnerDaysCompleted} perfect days

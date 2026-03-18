@@ -103,6 +103,8 @@ export default function DashboardPage() {
       partnerLastSeen={partnerLastSeen}
       partnerTimer={partnerTimer}
       achievements={achievements ?? []}
+      myEquippedBadge={profile?.equipped_badge}
+      partnerEquippedBadge={partner?.equipped_badge}
     />
   );
 }

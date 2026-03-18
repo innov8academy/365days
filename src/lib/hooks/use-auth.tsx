@@ -9,6 +9,7 @@ interface Profile {
   name: string;
   email: string;
   avatar_url: string | null;
+  equipped_badge: string | null;
 }
 
 interface AuthContextType {

@@ -19,6 +19,7 @@ import {
   Award,
 } from "lucide-react";
 import { BadgeCard } from "@/components/badges/badge-card";
+import { EquippedBadge } from "@/components/badges/equipped-badge";
 import { ACHIEVEMENTS, TIER_CONFIG, getEvolutionTier, getAchievementById } from "@/lib/achievements";
 import { formatMinutesToHours, formatTime } from "@/lib/dates";
 import { DEEP_WORK_DAILY_TARGET } from "@/lib/constants";
@@ -41,6 +42,8 @@ interface DashboardViewProps {
   partnerLastSeen?: string | null;
   partnerTimer?: { mode: string; secondsLeft: number; isRunning: boolean } | null;
   achievements?: UserAchievement[];
+  myEquippedBadge?: string | null;
+  partnerEquippedBadge?: string | null;
 }
 
 export function DashboardView({
@@ -58,6 +61,8 @@ export function DashboardView({
   partnerLastSeen,
   partnerTimer,
   achievements = [],
+  myEquippedBadge,
+  partnerEquippedBadge,
 }: DashboardViewProps) {
   const myCompleted = myTasks.filter((t) => t.completed).length;
   const myTotal = myTasks.length;
@@ -284,7 +289,10 @@ export function DashboardView({
                 <div className="h-12 w-12 rounded-xl bg-flame/[0.12] border border-flame/[0.2] flex items-center justify-center text-lg font-bold text-flame">
                   {me?.name?.charAt(0).toUpperCase() ?? "Y"}
                 </div>
-                <span className="text-xs font-semibold">{me?.name ?? "You"}</span>
+                <span className="text-xs font-semibold flex items-center gap-1">
+                  {me?.name ?? "You"}
+                  <EquippedBadge achievementId={myEquippedBadge} />
+                </span>
                 <div className="text-xs text-muted-foreground space-y-0.5 text-center">
                   <div>{myCompleted}/{myTotal} tasks</div>
                   <div>{formatMinutesToHours(myDeepWorkMinutes)} deep work</div>
@@ -297,7 +305,10 @@ export function DashboardView({
                 <div className="h-12 w-12 rounded-xl bg-partner/[0.12] border border-partner/[0.2] flex items-center justify-center text-lg font-bold text-partner">
                   {partner?.name?.charAt(0).toUpperCase() ?? "P"}
                 </div>
-                <span className="text-xs font-semibold">{partner?.name ?? "Partner"}</span>
+                <span className="text-xs font-semibold flex items-center gap-1">
+                  {partner?.name ?? "Partner"}
+                  <EquippedBadge achievementId={partnerEquippedBadge} />
+                </span>
                 <div className="text-xs text-muted-foreground space-y-0.5 text-center">
                   <div>{partnerCompleted}/{partnerTotal} tasks</div>
                   <div>{formatMinutesToHours(partnerDeepWorkMinutes)} deep work</div>

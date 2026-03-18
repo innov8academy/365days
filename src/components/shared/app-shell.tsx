@@ -57,15 +57,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         partnerName={partner?.name}
         partnerPresence={partnerStatus}
         partnerLastSeen={partnerLastSeen}
+        myEquippedBadge={profile?.equipped_badge}
+        partnerEquippedBadge={partner?.equipped_badge}
       />
       <BottomNav />
       <SidebarNav
         partnerName={partner?.name}
         partnerPresence={partnerStatus}
         partnerLastSeen={partnerLastSeen}
+        partnerEquippedBadge={partner?.equipped_badge}
       />
       <div className="lg:pl-64">
-        <DesktopHeader userName={profile?.name} />
+        <DesktopHeader userName={profile?.name} equippedBadge={profile?.equipped_badge} />
         <main className="relative mx-auto px-4 py-6 pb-28 lg:pb-10 lg:px-8 max-w-5xl">
           {children}
         </main>

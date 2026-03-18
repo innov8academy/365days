@@ -5,16 +5,19 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { PresenceIndicator } from "@/components/shared/presence-indicator";
 import type { PresenceStatus } from "@/components/shared/presence-indicator";
-import { LogOut, Coffee } from "lucide-react";
+import { EquippedBadge } from "@/components/badges/equipped-badge";
+import { LogOut, Coffee, Award } from "lucide-react";
 
 interface HeaderProps {
   userName?: string;
   partnerName?: string;
   partnerPresence?: PresenceStatus;
   partnerLastSeen?: string | null;
+  myEquippedBadge?: string | null;
+  partnerEquippedBadge?: string | null;
 }
 
-export function AppHeader({ userName, partnerName, partnerPresence = "offline", partnerLastSeen }: HeaderProps) {
+export function AppHeader({ userName, partnerName, partnerPresence = "offline", partnerLastSeen, myEquippedBadge, partnerEquippedBadge }: HeaderProps) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -32,8 +35,9 @@ export function AppHeader({ userName, partnerName, partnerPresence = "offline", 
               365
             </span>
             {userName && (
-              <span className="text-sm text-stone-500">
+              <span className="text-sm text-stone-500 flex items-center gap-1.5">
                 Hey, <span className="text-stone-300 font-medium">{userName}</span>
+                <EquippedBadge achievementId={myEquippedBadge} />
               </span>
             )}
           </div>
@@ -43,7 +47,17 @@ export function AppHeader({ userName, partnerName, partnerPresence = "offline", 
               <span className="text-xs text-stone-500 font-medium">
                 {partnerName ?? "Partner"}
               </span>
+              <EquippedBadge achievementId={partnerEquippedBadge} />
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => router.push("/achievements")}
+              title="Achievements"
+              className="h-8 w-8 rounded-xl text-stone-600 hover:text-stone-300 hover:bg-white/[0.04]"
+            >
+              <Award className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -69,7 +83,7 @@ export function AppHeader({ userName, partnerName, partnerPresence = "offline", 
   );
 }
 
-export function DesktopHeader({ userName }: { userName?: string }) {
+export function DesktopHeader({ userName, equippedBadge }: { userName?: string; equippedBadge?: string | null }) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -82,8 +96,9 @@ export function DesktopHeader({ userName }: { userName?: string }) {
     <header className="hidden lg:flex sticky top-0 z-50 h-16 items-center justify-between px-8 border-b border-white/[0.06] bg-[#0c0a09]/80 backdrop-blur-2xl">
       <div className="flex items-center gap-3">
         {userName && (
-          <span className="text-sm text-stone-500">
+          <span className="text-sm text-stone-500 flex items-center gap-1.5">
             Welcome back, <span className="text-stone-200 font-semibold">{userName}</span>
+            <EquippedBadge achievementId={equippedBadge} />
           </span>
         )}
       </div>

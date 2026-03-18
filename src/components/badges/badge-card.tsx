@@ -30,6 +30,7 @@ import {
   type AchievementTier,
 } from "@/lib/achievements";
 import { Badge } from "@/components/ui/badge";
+import { Shield as ShieldIcon } from "lucide-react";
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   brain: Brain,
@@ -57,9 +58,12 @@ interface BadgeCardProps {
   achievement: AchievementDef;
   earnedCount: number;
   compact?: boolean;
+  isEquipped?: boolean;
+  onEquip?: () => void;
+  equipping?: boolean;
 }
 
-export function BadgeCard({ achievement, earnedCount, compact = false }: BadgeCardProps) {
+export function BadgeCard({ achievement, earnedCount, compact = false, isEquipped, onEquip, equipping }: BadgeCardProps) {
   const isEarned = earnedCount > 0;
   const displayTier: AchievementTier = achievement.repeatable
     ? getEvolutionTier(earnedCount)
@@ -204,6 +208,23 @@ export function BadgeCard({ achievement, earnedCount, compact = false }: BadgeCa
             <div className="mt-1 text-[10px] text-muted-foreground/50">
               Earned {earnedCount} time{earnedCount !== 1 ? "s" : ""}
             </div>
+          )}
+
+          {/* Equip as title badge */}
+          {isEarned && onEquip && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEquip(); }}
+              disabled={equipping}
+              className={cn(
+                "mt-2 flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all",
+                isEquipped
+                  ? "bg-flame/[0.1] border-flame/[0.2] text-flame"
+                  : "bg-white/[0.03] border-white/[0.08] text-stone-500 hover:text-stone-300 hover:border-white/[0.15]"
+              )}
+            >
+              <ShieldIcon className="h-3 w-3" />
+              {isEquipped ? "Equipped" : "Set as Title"}
+            </button>
           )}
         </div>
       </div>

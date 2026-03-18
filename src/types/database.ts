@@ -8,6 +8,7 @@ export interface User {
   name: string;
   email: string;
   avatar_url: string | null;
+  equipped_badge: string | null;
   created_at: string;
 }
 

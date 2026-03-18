@@ -127,6 +127,8 @@ export default function LeaderboardPage() {
       myDaysCompleted={myDaysCompleted}
       partnerDaysCompleted={partnerDaysCompleted}
       pastCompetitions={pastCompetitions ?? []}
+      myEquippedBadge={profile?.equipped_badge}
+      partnerEquippedBadge={partner?.equipped_badge}
     />
   );
 }

@@ -33,6 +33,7 @@ export default function AchievementsPage() {
       summaries={allSummaries ?? []}
       myTodayMinutes={myTodayMinutes}
       partnerTodayMinutes={partnerTodayMinutes}
+      myEquippedBadge={profile?.equipped_badge}
     />
   );
 }

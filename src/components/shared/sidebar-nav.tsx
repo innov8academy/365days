@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PresenceIndicator } from "@/components/shared/presence-indicator";
 import type { PresenceStatus } from "@/components/shared/presence-indicator";
+import { EquippedBadge } from "@/components/badges/equipped-badge";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -30,12 +31,14 @@ interface SidebarNavProps {
   partnerName?: string;
   partnerPresence?: PresenceStatus;
   partnerLastSeen?: string | null;
+  partnerEquippedBadge?: string | null;
 }
 
 export function SidebarNav({
   partnerName,
   partnerPresence = "offline",
   partnerLastSeen,
+  partnerEquippedBadge,
 }: SidebarNavProps) {
   const pathname = usePathname();
 
@@ -108,8 +111,9 @@ export function SidebarNav({
             />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate">
+            <div className="text-sm font-medium truncate flex items-center gap-1.5">
               {partnerName ?? "Partner"}
+              <EquippedBadge achievementId={partnerEquippedBadge} />
             </div>
             <PresenceIndicator status={partnerPresence} showLabel lastSeen={partnerLastSeen} size="sm" />
           </div>

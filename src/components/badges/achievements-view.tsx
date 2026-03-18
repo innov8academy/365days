@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { BadgeCard } from "@/components/badges/badge-card";
+import { EquippedBadge } from "@/components/badges/equipped-badge";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 import {
   ACHIEVEMENTS,
   CATEGORY_LABELS,
@@ -27,6 +30,7 @@ interface AchievementsViewProps {
   summaries: DailySummary[];
   myTodayMinutes: number;
   partnerTodayMinutes: number;
+  myEquippedBadge?: string | null;
 }
 
 const CATEGORIES: AchievementCategory[] = [
@@ -44,10 +48,31 @@ export function AchievementsView({
   summaries,
   myTodayMinutes,
   partnerTodayMinutes,
+  myEquippedBadge,
 }: AchievementsViewProps) {
   const [viewUser, setViewUser] = useState<"me" | "partner">("me");
+  const [equippedBadge, setEquippedBadge] = useState<string | null>(myEquippedBadge ?? null);
+  const [equipping, setEquipping] = useState(false);
   const currentUserId = viewUser === "me" ? me?.id : partner?.id;
   const currentUserName = viewUser === "me" ? (me?.name ?? "You") : (partner?.name ?? "Partner");
+  const supabase = createClient();
+
+  async function handleEquipBadge(achievementId: string) {
+    if (!me?.id) return;
+    setEquipping(true);
+    const newBadge = equippedBadge === achievementId ? null : achievementId;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ equipped_badge: newBadge })
+      .eq("id", me.id);
+    if (error) {
+      toast.error("Failed to update badge");
+    } else {
+      setEquippedBadge(newBadge);
+      toast.success(newBadge ? "Badge equipped!" : "Badge removed");
+    }
+    setEquipping(false);
+  }
 
   const userAchievements = achievements.filter((a) => a.user_id === currentUserId);
 
@@ -70,7 +95,10 @@ export function AchievementsView({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-xl font-extrabold tracking-tight">Achievements</h1>
+        <div className="flex items-center gap-2.5">
+          <h1 className="font-display text-xl font-extrabold tracking-tight">Achievements</h1>
+          <EquippedBadge achievementId={equippedBadge} size="md" />
+        </div>
         <Badge variant="secondary" className="bg-flame/[0.08] text-flame border-flame/[0.15] rounded-lg">
           {totalEarned}/{totalPossible} unlocked
         </Badge>
@@ -150,6 +178,9 @@ export function AchievementsView({
                     <BadgeCard
                       achievement={achievement}
                       earnedCount={count}
+                      isEquipped={viewUser === "me" && equippedBadge === achievement.id}
+                      onEquip={viewUser === "me" && count > 0 ? () => handleEquipBadge(achievement.id) : undefined}
+                      equipping={equipping}
                     />
                     {/* Progress indicator */}
                     {count === 0 && (
