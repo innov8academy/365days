@@ -201,3 +201,24 @@ create index idx_breaks_dates on public.breaks(start_date, end_date);
 -- MIGRATION: Add DELETE policy on breaks (for decline/cancel)
 -- Run in Supabase SQL Editor:
 -- create policy "Users can delete breaks" on public.breaks for delete using (true);
+
+-- MIGRATION: Achievements system
+-- Run in Supabase SQL Editor:
+--
+-- create table public.user_achievements (
+--   id uuid default uuid_generate_v4() primary key,
+--   user_id uuid references public.profiles(id) on delete cascade not null,
+--   achievement_id text not null,
+--   earned_at timestamptz default now() not null,
+--   earned_date date not null,
+--   metadata jsonb default '{}'::jsonb
+-- );
+--
+-- create unique index idx_user_achievements_unique
+--   on public.user_achievements(user_id, achievement_id, earned_date);
+-- create index idx_user_achievements_user
+--   on public.user_achievements(user_id);
+--
+-- alter table public.user_achievements enable row level security;
+-- create policy "Users can view all achievements" on public.user_achievements
+--   for select using (true);

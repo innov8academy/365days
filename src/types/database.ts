@@ -75,6 +75,15 @@ export interface Break {
   created_at: string;
 }
 
+export interface UserAchievement {
+  id: string;
+  user_id: string;
+  achievement_id: string;
+  earned_at: string;
+  earned_date: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface UserWithPoints extends User {
   total_points: number;
   tasks_completed_days: number;

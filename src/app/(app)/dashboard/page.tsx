@@ -3,7 +3,7 @@
 import { useAuth } from "@/lib/hooks/use-auth";
 import { usePresence } from "@/lib/hooks/use-presence";
 import { useTimerBroadcast } from "@/lib/hooks/use-timer-broadcast";
-import { useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useActiveCompetition, useSummaries, useGapFiller } from "@/lib/hooks/use-data";
+import { useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useActiveCompetition, useSummaries, useAchievements, useGapFiller } from "@/lib/hooks/use-data";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import { DashboardSkeleton } from "@/components/shared/skeleton-page";
 import { getToday, getYesterday } from "@/lib/dates";
@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const { data: streak } = useStreak();
   const { data: competition } = useActiveCompetition();
   const { data: allSummaries } = useSummaries();
+  const { data: achievements } = useAchievements();
   useGapFiller();
 
   if (tasksLoading || dwLoading || !user) return <DashboardSkeleton />;
@@ -101,6 +102,7 @@ export default function DashboardPage() {
       partnerPresence={partnerStatus}
       partnerLastSeen={partnerLastSeen}
       partnerTimer={partnerTimer}
+      achievements={achievements ?? []}
     />
   );
 }

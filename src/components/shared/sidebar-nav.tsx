@@ -10,6 +10,7 @@ import {
   Flame,
   Trophy,
   Coffee,
+  Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PresenceIndicator } from "@/components/shared/presence-indicator";
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/timer", label: "Deep Work", icon: Timer },
   { href: "/streak", label: "Streak", icon: Flame },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/achievements", label: "Achievements", icon: Award },
   { href: "/breaks", label: "Breaks", icon: Coffee },
 ];
 

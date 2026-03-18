@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/hooks/use-auth";
-import { useTodayDeepWork, useStreak, useSummaries } from "@/lib/hooks/use-data";
+import { useTodayDeepWork, useStreak, useSummaries, useAchievements } from "@/lib/hooks/use-data";
 import { StreakView } from "@/components/streak/streak-view";
 import { StreakSkeleton } from "@/components/shared/skeleton-page";
 import { DEEP_WORK_DAILY_TARGET } from "@/lib/constants";
@@ -11,6 +11,7 @@ export default function StreakPage() {
   const { data: allDeepWork, isLoading: dwLoading } = useTodayDeepWork();
   const { data: streak, isLoading: streakLoading } = useStreak();
   const { data: allSummaries } = useSummaries();
+  const { data: achievements } = useAchievements();
 
   if (dwLoading || streakLoading || !user) return <StreakSkeleton />;
 
@@ -39,6 +40,7 @@ export default function StreakPage() {
       partnerTodayMinutes={partnerTodayMinutes}
       mySummaries={mySummaries}
       partnerSummaries={partnerSummaries}
+      achievements={achievements ?? []}
     />
   );
 }

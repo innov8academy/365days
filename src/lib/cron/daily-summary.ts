@@ -9,6 +9,7 @@ import {
   DEEP_WORK_RECOVERY_TARGET,
   STREAK_RECOVERY_DAYS,
 } from "@/lib/constants";
+import { awardAchievements } from "@/lib/cron/award-achievements";
 
 export async function runDailySummary(targetDate?: string) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -133,6 +134,8 @@ export async function runDailySummary(targetDate?: string) {
       user_id: profile.id,
       points,
       deep_work_minutes: deepWorkMinutes,
+      tasks_total: tasksTotal,
+      tasks_completed: tasksCompleted,
       hit_target: hitTarget,
       error: summaryError?.message,
     });
@@ -202,6 +205,31 @@ export async function runDailySummary(targetDate?: string) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", streak.id);
+  }
+
+  // Award achievements for each user
+  // Re-read streak after update to get the latest count
+  const { data: freshStreak } = await supabase
+    .from("streaks")
+    .select("current_count")
+    .limit(1)
+    .single();
+  const currentStreakCount = freshStreak?.current_count ?? 0;
+
+  for (const result of results) {
+    try {
+      await awardAchievements(
+        supabase,
+        result.user_id,
+        today,
+        result.deep_work_minutes,
+        currentStreakCount,
+        result.tasks_total,
+        result.tasks_completed
+      );
+    } catch (e) {
+      console.error(`Error awarding achievements for ${result.user_id}:`, e);
+    }
   }
 
   return {

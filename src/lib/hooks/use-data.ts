@@ -85,6 +85,14 @@ async function fetchBreaks() {
   return data ?? [];
 }
 
+async function fetchAchievements() {
+  const { data } = await supabase
+    .from("user_achievements")
+    .select("*")
+    .order("earned_at", { ascending: false });
+  return data ?? [];
+}
+
 // SWR hooks with fast revalidation
 const swrOptions = {
   revalidateOnFocus: true,
@@ -121,6 +129,10 @@ export function useSummaries() {
 
 export function useBreaks() {
   return useSWR("breaks", fetchBreaks, swrOptions);
+}
+
+export function useAchievements() {
+  return useSWR("achievements", fetchAchievements, swrOptions);
 }
 
 // Auto-trigger daily summary for yesterday if summary or streak is stale
@@ -197,6 +209,13 @@ export function useRealtimeSync() {
         { event: "*", schema: "public", table: "breaks" },
         () => {
           mutate("breaks");
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_achievements" },
+        () => {
+          mutate("achievements");
         }
       )
       .subscribe();

@@ -25,7 +25,8 @@ import {
 } from "@/lib/constants";
 import { getMilestones, getDaysUntilMovieFood, getNextMovieFoodDay } from "@/lib/milestones";
 import { cn } from "@/lib/utils";
-import type { Streak } from "@/types/database";
+import { BadgeGrid } from "@/components/badges/badge-grid";
+import type { Streak, UserAchievement } from "@/types/database";
 
 const milestoneIcons: Record<string, React.ReactNode> = {
   palette: <Palette className="h-4 w-4" />,
@@ -52,6 +53,7 @@ interface StreakViewProps {
   partnerTodayMinutes: number;
   mySummaries: { date: string; deep_work_minutes: number; streak_maintained: boolean }[];
   partnerSummaries: { date: string; deep_work_minutes: number; streak_maintained: boolean }[];
+  achievements?: UserAchievement[];
 }
 
 export function StreakView({
@@ -62,6 +64,7 @@ export function StreakView({
   partnerTodayMinutes,
   mySummaries,
   partnerSummaries,
+  achievements = [],
 }: StreakViewProps) {
   const currentStreak = streak?.current_count ?? 0;
   const bestStreak = streak?.best_count ?? 0;
@@ -321,6 +324,18 @@ export function StreakView({
           </div>
         </CardContent>
       </Card>
+
+      {/* Badges Showcase */}
+      {me && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Badges</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BadgeGrid achievements={achievements} userId={me.id} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

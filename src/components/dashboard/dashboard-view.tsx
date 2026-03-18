@@ -16,10 +16,13 @@ import {
   ArrowRight,
   CheckCircle2,
   XCircle,
+  Award,
 } from "lucide-react";
+import { BadgeCard } from "@/components/badges/badge-card";
+import { ACHIEVEMENTS, TIER_CONFIG, getEvolutionTier, getAchievementById } from "@/lib/achievements";
 import { formatMinutesToHours, formatTime } from "@/lib/dates";
 import { DEEP_WORK_DAILY_TARGET } from "@/lib/constants";
-import type { DailyTask, Streak, Competition } from "@/types/database";
+import type { DailyTask, Streak, Competition, UserAchievement } from "@/types/database";
 
 interface DashboardViewProps {
   userId: string;
@@ -37,6 +40,7 @@ interface DashboardViewProps {
   partnerPresence?: PresenceStatus;
   partnerLastSeen?: string | null;
   partnerTimer?: { mode: string; secondsLeft: number; isRunning: boolean } | null;
+  achievements?: UserAchievement[];
 }
 
 export function DashboardView({
@@ -53,6 +57,7 @@ export function DashboardView({
   partnerPresence = "offline",
   partnerLastSeen,
   partnerTimer,
+  achievements = [],
 }: DashboardViewProps) {
   const myCompleted = myTasks.filter((t) => t.completed).length;
   const myTotal = myTasks.length;
@@ -302,6 +307,51 @@ export function DashboardView({
           </CardContent>
         </Card>
       </div>
+
+      {/* Recent Badges */}
+      {(() => {
+        const recentBadges = achievements
+          .sort((a, b) => new Date(b.earned_at).getTime() - new Date(a.earned_at).getTime())
+          .slice(0, 5);
+
+        if (recentBadges.length === 0) return null;
+
+        return (
+          <Link href="/achievements" className="block group">
+            <Card className="animate-slide-up" style={{ animationDelay: "260ms" }}>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-xl bg-amber-400/[0.1] border border-amber-400/[0.15] flex items-center justify-center">
+                      <Award className="h-4 w-4 text-amber-400" />
+                    </div>
+                    <span className="text-[15px] font-semibold">Recent Badges</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-stone-600 group-hover:text-flame group-hover:translate-x-1 transition-all duration-300" />
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {recentBadges.map((ua) => {
+                    const def = getAchievementById(ua.achievement_id);
+                    if (!def) return null;
+                    // Count total earned for this achievement
+                    const earnedCount = achievements.filter(
+                      (a) => a.achievement_id === ua.achievement_id && a.user_id === ua.user_id
+                    ).length;
+                    return (
+                      <BadgeCard
+                        key={ua.id}
+                        achievement={def}
+                        earnedCount={earnedCount}
+                        compact
+                      />
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        );
+      })()}
     </div>
   );
 }
