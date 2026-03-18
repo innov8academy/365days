@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import confetti from "canvas-confetti";
 import type { DailyTask } from "@/types/database";
+import { checkAchievementsLive } from "@/lib/check-achievements-live";
 
 interface TaskListProps {
   tasks: DailyTask[];
@@ -66,6 +67,9 @@ export function TaskList({
     if (error) {
       onTaskToggled(task.id, !newCompleted);
       toast.error("Failed to update task");
+    } else if (newCompleted) {
+      // Check and award task achievements in real-time
+      checkAchievementsLive(supabase, task.user_id, "task_complete").catch(() => {});
     }
   }
 

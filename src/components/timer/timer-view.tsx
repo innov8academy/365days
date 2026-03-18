@@ -35,6 +35,7 @@ import {
   getTargetEndTime,
   resolveSavedSecondsLeft,
 } from "@/lib/timer";
+import { checkAchievementsLive } from "@/lib/check-achievements-live";
 
 type TimerMode = "work" | "break" | "longBreak";
 type TimerCompletionSource = "active" | "background" | "restore";
@@ -363,6 +364,9 @@ export function TimerView({
       });
 
       setTodayMinutes((prev) => prev + durationMinutes);
+
+      // Check and award achievements in real-time
+      checkAchievementsLive(supabase, userId, "deep_work").catch(() => {});
     } catch {
       if (lastSavedSessionKeyRef.current === sessionKey) {
         lastSavedSessionKeyRef.current = null;
