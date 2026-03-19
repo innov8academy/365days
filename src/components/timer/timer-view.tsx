@@ -366,7 +366,10 @@ export function TimerView({
       setTodayMinutes((prev) => prev + durationMinutes);
 
       // Check and award achievements in real-time
-      checkAchievementsLive(supabase, userId, "deep_work").catch(() => {});
+      checkAchievementsLive(supabase, userId, "deep_work", {
+        sessionDuration: durationMinutes,
+        sessionEndedAt: endTime.toISOString(),
+      }).catch(() => {});
     } catch {
       if (lastSavedSessionKeyRef.current === sessionKey) {
         lastSavedSessionKeyRef.current = null;
@@ -528,13 +531,19 @@ export function TimerView({
       const restoredStartTime = saved.sessionStartTime ? new Date(saved.sessionStartTime) : null;
       lastSavedSessionKeyRef.current = saved.lastCompletedSessionKey ?? null;
       modeRef.current = saved.mode;
-      sessionsCompletedRef.current = saved.sessionsCompleted;
+
+      // Reset sessions count if saved state is from a different day
+      const savedDate = new Date(saved.savedAt);
+      const savedDateStr = `${savedDate.getFullYear()}-${String(savedDate.getMonth() + 1).padStart(2, "0")}-${String(savedDate.getDate()).padStart(2, "0")}`;
+      const isFromToday = savedDateStr === today;
+      const restoredSessions = isFromToday ? saved.sessionsCompleted : 0;
+      sessionsCompletedRef.current = restoredSessions;
       sessionStartTimeRef.current = restoredStartTime;
       secondsLeftRef.current = saved.secondsLeft;
 
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMode(saved.mode);
-      setSessionsCompleted(saved.sessionsCompleted);
+      setSessionsCompleted(restoredSessions);
       setSessionStartTime(restoredStartTime);
 
       if (saved.isRunning) {
@@ -864,7 +873,7 @@ export function TimerView({
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
-                      onClick={() => updateSettings({ ...settings, workMinutes: Math.min(120, settings.workMinutes + 5) })}
+                      onClick={() => updateSettings({ ...settings, workMinutes: Math.min(240, settings.workMinutes + 5) })}
                     >
                       <Plus className="h-3 w-3" />
                     </Button>

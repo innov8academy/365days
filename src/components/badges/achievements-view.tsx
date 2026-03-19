@@ -38,6 +38,12 @@ const CATEGORIES: AchievementCategory[] = [
   "deep_work_cumulative",
   "streak",
   "tasks",
+  "time_of_day",
+  "personal_best",
+  "consistency",
+  "resilience",
+  "session",
+  "hidden",
 ];
 
 export function AchievementsView({
@@ -87,6 +93,9 @@ export function AchievementsView({
   const totalDeepWorkMinutes = userSummaries.reduce((sum, s) => sum + s.deep_work_minutes, 0);
   const currentStreakCount = streak?.current_count ?? 0;
   const consecutivePerfectDays = getConsecutivePerfectDays(userSummaries);
+  const consecutiveNoZeroDays = getConsecutiveNoZeroDays(userSummaries);
+  const consecutive80Days = getConsecutive80Days(userSummaries);
+  const consecutiveDeepWorkDays = getConsecutiveDeepWorkDays(userSummaries);
 
   // Stats
   const totalEarned = new Set(userAchievements.map((a) => a.achievement_id)).size;
@@ -183,13 +192,16 @@ export function AchievementsView({
                       equipping={equipping}
                     />
                     {/* Progress indicator */}
-                    {count === 0 && (
+                    {count === 0 && !achievement.hidden && (
                       <AchievementProgress
                         achievement={achievement}
                         totalDeepWorkMinutes={totalDeepWorkMinutes}
                         todayMinutes={viewUser === "me" ? myTodayMinutes : partnerTodayMinutes}
                         currentStreakCount={currentStreakCount}
                         consecutivePerfectDays={consecutivePerfectDays}
+                        consecutiveNoZeroDays={consecutiveNoZeroDays}
+                        consecutive80Days={consecutive80Days}
+                        consecutiveDeepWorkDays={consecutiveDeepWorkDays}
                       />
                     )}
                   </div>
@@ -211,16 +223,23 @@ function AchievementProgress({
   todayMinutes,
   currentStreakCount,
   consecutivePerfectDays,
+  consecutiveNoZeroDays,
+  consecutive80Days,
+  consecutiveDeepWorkDays,
 }: {
   achievement: (typeof ACHIEVEMENTS)[number];
   totalDeepWorkMinutes: number;
   todayMinutes: number;
   currentStreakCount: number;
   consecutivePerfectDays: number;
+  consecutiveNoZeroDays: number;
+  consecutive80Days: number;
+  consecutiveDeepWorkDays: number;
 }) {
   let current = 0;
   let target = achievement.threshold;
   let label = "";
+  let hintOnly = false;
 
   switch (achievement.category) {
     case "deep_work_daily":
@@ -241,14 +260,62 @@ function AchievementProgress({
     case "tasks":
       if (achievement.id === "first_blood") {
         label = "Complete any task";
-        return (
-          <div className="pl-14 text-[10px] text-muted-foreground/40">{label}</div>
-        );
+        hintOnly = true;
+        break;
       }
       current = consecutivePerfectDays;
       target = achievement.threshold;
       label = `${current} / ${target} consecutive perfect days`;
       break;
+    case "time_of_day":
+      label = achievement.description;
+      hintOnly = true;
+      break;
+    case "personal_best":
+      if (achievement.id === "marathon") {
+        label = "Complete a 2h+ deep work session";
+      } else if (achievement.id === "ultra_marathon") {
+        label = "Complete a 4h+ deep work session";
+      } else {
+        label = achievement.description;
+      }
+      hintOnly = true;
+      break;
+    case "consistency":
+      if (achievement.id === "no_zero_7" || achievement.id === "no_zero_30") {
+        current = consecutiveNoZeroDays;
+        target = achievement.threshold;
+        label = `${current} / ${target} consecutive days with tasks`;
+      } else if (achievement.id === "eighty_7" || achievement.id === "eighty_30") {
+        current = consecutive80Days;
+        target = achievement.threshold;
+        label = `${current} / ${target} consecutive days at 80%+`;
+      } else if (achievement.id === "iron_will") {
+        current = consecutiveDeepWorkDays;
+        target = achievement.threshold;
+        label = `${current} / ${target} consecutive days with deep work`;
+      }
+      break;
+    case "resilience":
+      label = achievement.description;
+      hintOnly = true;
+      break;
+    case "session":
+      if (achievement.id === "first_session") {
+        label = "Start a deep work session";
+      } else {
+        label = achievement.description;
+      }
+      hintOnly = true;
+      break;
+    case "hidden":
+      return null;
+  }
+
+  if (hintOnly) {
+    return (
+      <div className="pl-14 text-[10px] text-muted-foreground/40">{label}</div>
+    );
   }
 
   const progress = Math.min((current / target) * 100, 100);
@@ -282,6 +349,45 @@ function getConsecutivePerfectDays(summaries: DailySummary[]): number {
   let count = 0;
   for (const s of sorted) {
     if (s.tasks_total > 0 && s.tasks_completed === s.tasks_total) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+
+function getConsecutiveNoZeroDays(summaries: DailySummary[]): number {
+  const sorted = [...summaries].sort((a, b) => b.date.localeCompare(a.date));
+  let count = 0;
+  for (const s of sorted) {
+    if (s.tasks_completed >= 1) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+
+function getConsecutive80Days(summaries: DailySummary[]): number {
+  const sorted = [...summaries].sort((a, b) => b.date.localeCompare(a.date));
+  let count = 0;
+  for (const s of sorted) {
+    if (s.tasks_total > 0 && (s.tasks_completed / s.tasks_total) >= 0.8) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+
+function getConsecutiveDeepWorkDays(summaries: DailySummary[]): number {
+  const sorted = [...summaries].sort((a, b) => b.date.localeCompare(a.date));
+  let count = 0;
+  for (const s of sorted) {
+    if (s.deep_work_minutes > 0) {
       count++;
     } else {
       break;

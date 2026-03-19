@@ -1,7 +1,17 @@
 // Achievement definitions and tier configuration
 
 export type AchievementTier = "common" | "rare" | "epic" | "legendary" | "mythic";
-export type AchievementCategory = "deep_work_daily" | "deep_work_cumulative" | "streak" | "tasks";
+export type AchievementCategory =
+  | "deep_work_daily"
+  | "deep_work_cumulative"
+  | "streak"
+  | "tasks"
+  | "time_of_day"
+  | "personal_best"
+  | "consistency"
+  | "resilience"
+  | "session"
+  | "hidden";
 
 export interface AchievementDef {
   id: string;
@@ -12,6 +22,7 @@ export interface AchievementDef {
   icon: string; // Lucide icon name
   repeatable: boolean;
   threshold: number; // minutes for deep work, days for streak, days for tasks
+  hidden?: boolean; // If true, name/description hidden until earned
 }
 
 // --- Achievement Definitions ---
@@ -214,6 +225,272 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     repeatable: false,
     threshold: 30,
   },
+
+  // Category E: Time Warriors (repeatable)
+  {
+    id: "early_bird",
+    name: "Early Bird",
+    description: "Complete a task before 7 AM",
+    tier: "common",
+    category: "time_of_day",
+    icon: "sunrise",
+    repeatable: true,
+    threshold: 1,
+  },
+  {
+    id: "night_owl",
+    name: "Night Owl",
+    description: "Log deep work ending after 10 PM",
+    tier: "common",
+    category: "time_of_day",
+    icon: "moon",
+    repeatable: true,
+    threshold: 1,
+  },
+  {
+    id: "weekend_warrior",
+    name: "Weekend Warrior",
+    description: "Hit 5h+ deep work on a weekend day",
+    tier: "rare",
+    category: "time_of_day",
+    icon: "swords",
+    repeatable: true,
+    threshold: 300,
+  },
+  {
+    id: "speed_demon",
+    name: "Speed Demon",
+    description: "Complete all tasks before noon",
+    tier: "rare",
+    category: "time_of_day",
+    icon: "rocket",
+    repeatable: true,
+    threshold: 1,
+  },
+
+  // Category F: Personal Records (mixed)
+  {
+    id: "new_record",
+    name: "New Record",
+    description: "Set a new personal daily deep work record",
+    tier: "rare",
+    category: "personal_best",
+    icon: "trophy",
+    repeatable: true,
+    threshold: 1,
+  },
+  {
+    id: "marathon",
+    name: "Marathon",
+    description: "Single deep work session of 2+ hours",
+    tier: "epic",
+    category: "personal_best",
+    icon: "timer",
+    repeatable: true,
+    threshold: 120,
+  },
+  {
+    id: "ultra_marathon",
+    name: "Ultra Marathon",
+    description: "Single deep work session of 4+ hours",
+    tier: "legendary",
+    category: "personal_best",
+    icon: "hourglass",
+    repeatable: false,
+    threshold: 240,
+  },
+  {
+    id: "double_up",
+    name: "Double Up",
+    description: "Work 2x your average daily deep work",
+    tier: "epic",
+    category: "personal_best",
+    icon: "trending-up",
+    repeatable: true,
+    threshold: 1,
+  },
+
+  // Category G: Consistency Kings (one-time)
+  {
+    id: "no_zero_7",
+    name: "No Zero Week",
+    description: "Complete at least 1 task every day for 7 days",
+    tier: "common",
+    category: "consistency",
+    icon: "target",
+    repeatable: false,
+    threshold: 7,
+  },
+  {
+    id: "no_zero_30",
+    name: "No Zero Month",
+    description: "Complete at least 1 task every day for 30 days",
+    tier: "epic",
+    category: "consistency",
+    icon: "crosshair",
+    repeatable: false,
+    threshold: 30,
+  },
+  {
+    id: "eighty_7",
+    name: "80% Club",
+    description: "80%+ task completion rate for 7 straight days",
+    tier: "rare",
+    category: "consistency",
+    icon: "percent",
+    repeatable: false,
+    threshold: 7,
+  },
+  {
+    id: "eighty_30",
+    name: "80% Elite",
+    description: "80%+ task completion rate for 30 straight days",
+    tier: "legendary",
+    category: "consistency",
+    icon: "bar-chart-3",
+    repeatable: false,
+    threshold: 30,
+  },
+  {
+    id: "iron_will",
+    name: "Iron Will",
+    description: "Deep work every single day for 14 days",
+    tier: "epic",
+    category: "consistency",
+    icon: "dumbbell",
+    repeatable: false,
+    threshold: 14,
+  },
+
+  // Category H: Comeback & Resilience (mixed)
+  {
+    id: "bounce_back",
+    name: "Bounce Back",
+    description: "Complete all tasks the day after missing some",
+    tier: "common",
+    category: "resilience",
+    icon: "rotate-ccw",
+    repeatable: true,
+    threshold: 1,
+  },
+  {
+    id: "comeback_kid",
+    name: "Comeback Kid",
+    description: "Rebuild a 7-day streak after breaking one",
+    tier: "rare",
+    category: "resilience",
+    icon: "heart-pulse",
+    repeatable: true,
+    threshold: 7,
+  },
+  {
+    id: "phoenix",
+    name: "Phoenix Rising",
+    description: "Rebuild a 30-day streak after breaking one",
+    tier: "legendary",
+    category: "resilience",
+    icon: "bird",
+    repeatable: false,
+    threshold: 30,
+  },
+  {
+    id: "back_from_dead",
+    name: "Back from the Dead",
+    description: "Return after 7+ days inactive and complete all tasks",
+    tier: "epic",
+    category: "resilience",
+    icon: "skull",
+    repeatable: true,
+    threshold: 7,
+  },
+
+  // Category I: Session Mastery (mixed)
+  {
+    id: "first_session",
+    name: "First Timer",
+    description: "Complete your first deep work session",
+    tier: "common",
+    category: "session",
+    icon: "play",
+    repeatable: false,
+    threshold: 1,
+  },
+  {
+    id: "pomodoro_10",
+    name: "Pomodoro Master",
+    description: "Complete 10 pomodoro sessions in one day",
+    tier: "rare",
+    category: "session",
+    icon: "alarm-clock",
+    repeatable: true,
+    threshold: 10,
+  },
+  {
+    id: "sessions_100",
+    name: "Century Sessions",
+    description: "Complete 100 total deep work sessions",
+    tier: "rare",
+    category: "session",
+    icon: "layers",
+    repeatable: false,
+    threshold: 100,
+  },
+  {
+    id: "sessions_500",
+    name: "Session Legend",
+    description: "Complete 500 total deep work sessions",
+    tier: "legendary",
+    category: "session",
+    icon: "database",
+    repeatable: false,
+    threshold: 500,
+  },
+
+  // Category J: Secret Achievements (hidden until earned)
+  {
+    id: "palindrome",
+    name: "Palindrome Day",
+    description: "Log deep work on a palindrome date",
+    tier: "rare",
+    category: "hidden",
+    icon: "sparkles",
+    repeatable: true,
+    threshold: 1,
+    hidden: true,
+  },
+  {
+    id: "midnight_oil",
+    name: "Midnight Oil",
+    description: "End a deep work session between midnight and 3 AM",
+    tier: "rare",
+    category: "hidden",
+    icon: "lamp",
+    repeatable: true,
+    threshold: 1,
+    hidden: true,
+  },
+  {
+    id: "triple_threat",
+    name: "Triple Threat",
+    description: "Complete all tasks, hit deep work target, and maintain streak in one day",
+    tier: "epic",
+    category: "hidden",
+    icon: "star",
+    repeatable: true,
+    threshold: 1,
+    hidden: true,
+  },
+  {
+    id: "badge_collector",
+    name: "Badge Collector",
+    description: "Earn at least one achievement from every category",
+    tier: "legendary",
+    category: "hidden",
+    icon: "award",
+    repeatable: false,
+    threshold: 1,
+    hidden: true,
+  },
 ];
 
 // --- Tier Configuration ---
@@ -319,6 +596,12 @@ export const CATEGORY_LABELS: Record<AchievementCategory, string> = {
   deep_work_cumulative: "Total Hours",
   streak: "Streak",
   tasks: "Tasks",
+  time_of_day: "Time Warriors",
+  personal_best: "Personal Records",
+  consistency: "Consistency Kings",
+  resilience: "Comeback & Resilience",
+  session: "Session Mastery",
+  hidden: "Secret Achievements",
 };
 
 export const CATEGORY_DESCRIPTIONS: Record<AchievementCategory, string> = {
@@ -326,4 +609,10 @@ export const CATEGORY_DESCRIPTIONS: Record<AchievementCategory, string> = {
   deep_work_cumulative: "Lifetime deep work milestones",
   streak: "Reach streak milestones",
   tasks: "Task completion achievements",
+  time_of_day: "Achievements based on when you work. Repeated earning evolves the badge!",
+  personal_best: "Break your own records and push your limits",
+  consistency: "Sustained high performance over time",
+  resilience: "Bounce back stronger after setbacks",
+  session: "Deep work session milestones",
+  hidden: "Mystery achievements — keep working to discover them",
 };

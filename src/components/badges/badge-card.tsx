@@ -21,6 +21,31 @@ import {
   Award,
   LockKeyhole,
   Shield as ShieldIcon,
+  Sunrise,
+  Moon,
+  Swords,
+  Rocket,
+  Trophy,
+  Timer,
+  Hourglass,
+  TrendingUp,
+  Target,
+  Crosshair,
+  Percent,
+  BarChart3,
+  Dumbbell,
+  RotateCcw,
+  HeartPulse,
+  Bird,
+  Skull,
+  Play,
+  AlarmClock,
+  Layers,
+  Database,
+  Sparkles,
+  Lamp,
+  Star,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -52,6 +77,30 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   check: Check,
   "list-checks": ListChecks,
   award: Award,
+  sunrise: Sunrise,
+  moon: Moon,
+  swords: Swords,
+  rocket: Rocket,
+  trophy: Trophy,
+  timer: Timer,
+  hourglass: Hourglass,
+  "trending-up": TrendingUp,
+  target: Target,
+  crosshair: Crosshair,
+  percent: Percent,
+  "bar-chart-3": BarChart3,
+  dumbbell: Dumbbell,
+  "rotate-ccw": RotateCcw,
+  "heart-pulse": HeartPulse,
+  bird: Bird,
+  skull: Skull,
+  play: Play,
+  "alarm-clock": AlarmClock,
+  layers: Layers,
+  database: Database,
+  sparkles: Sparkles,
+  lamp: Lamp,
+  star: Star,
 };
 
 // Tier-specific visual configs for badge icons
@@ -132,10 +181,11 @@ function BadgeIcon({ achievement, tier, isEarned, size = "md" }: {
   const s = sizes[size];
 
   if (!isEarned) {
+    const HiddenIcon = achievement.hidden ? HelpCircle : Icon;
     return (
       <div className={cn("relative shrink-0 rounded-2xl border flex items-center justify-center", s.outer, "bg-white/[0.02] border-white/[0.06]")}>
         <div className={cn("rounded-xl border flex items-center justify-center", s.inner, "bg-white/[0.03] border-white/[0.05]")}>
-          <Icon className={cn(s.icon, "text-stone-700")} />
+          <HiddenIcon className={cn(s.icon, "text-stone-700")} />
         </div>
       </div>
     );
@@ -278,7 +328,7 @@ export function BadgeCard({ achievement, earnedCount, compact = false, isEquippe
                 isEarned ? "text-foreground" : "text-stone-500"
               )}
             >
-              {achievement.name}
+              {achievement.hidden && !isEarned ? "???" : achievement.name}
             </span>
             {isEarned && (
               <Badge
@@ -295,7 +345,7 @@ export function BadgeCard({ achievement, earnedCount, compact = false, isEquippe
             )}
           </div>
           <p className="text-xs text-muted-foreground/50 mt-1">
-            {achievement.description}
+            {achievement.hidden && !isEarned ? "Keep working to discover this secret achievement" : achievement.description}
           </p>
 
           {/* Evolution progress for repeatable badges */}

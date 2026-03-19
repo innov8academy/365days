@@ -143,6 +143,7 @@ export async function runDailySummary(targetDate?: string) {
 
   // Update streak (skip if break day or processing an older date than what's already been processed)
   const isOlderDate = streak?.last_active_date && streak.last_active_date >= today;
+  const oldStatus = streak?.status;
   if (!isBreakDay && streak && !isOlderDate) {
     const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
     const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
@@ -211,10 +212,16 @@ export async function runDailySummary(targetDate?: string) {
   // Re-read streak after update to get the latest count
   const { data: freshStreak } = await supabase
     .from("streaks")
-    .select("current_count")
+    .select("current_count, status")
     .limit(1)
     .single();
   const currentStreakCount = freshStreak?.current_count ?? 0;
+
+  // Detect streak status transition for resilience achievements
+  const streakTransition =
+    !isBreakDay && streak && freshStreak && freshStreak.status !== oldStatus
+      ? { from: oldStatus, to: freshStreak.status }
+      : undefined;
 
   for (const result of results) {
     try {
@@ -225,7 +232,8 @@ export async function runDailySummary(targetDate?: string) {
         result.deep_work_minutes,
         currentStreakCount,
         result.tasks_total,
-        result.tasks_completed
+        result.tasks_completed,
+        streakTransition
       );
     } catch (e) {
       console.error(`Error awarding achievements for ${result.user_id}:`, e);
