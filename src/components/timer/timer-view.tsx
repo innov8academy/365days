@@ -461,9 +461,19 @@ export function TimerView({
         });
 
         if (completedSessionStartTime) {
+          // Cap elapsed time to actual wall-clock time to prevent inflated
+          // durations when the timer restores from a stale saved state
+          // (e.g. mobile PWA killed & reopened with old targetEndTime).
+          const wallClockSeconds = Math.floor(
+            (Date.now() - completedSessionStartTime.getTime()) / 1000
+          );
+          const elapsedSeconds = Math.min(
+            currentSettings.workMinutes * 60,
+            Math.max(0, wallClockSeconds),
+          );
           void saveSessionWithDuration(
             completedSessionStartTime,
-            currentSettings.workMinutes * 60,
+            elapsedSeconds,
             currentSettings.workMinutes,
           );
         }
@@ -604,8 +614,30 @@ export function TimerView({
       syncRunningTimer("background");
     }
 
+    // On mobile PWA, pagehide fires reliably when iOS/Android is about
+    // to kill the page.  Force-save timer state so the next restore has
+    // an up-to-date targetEndTime instead of a stale one.
+    function handlePageHide() {
+      if (!isRunningRef.current || targetEndTimeRef.current === null) return;
+      const remaining = getRemainingSeconds(targetEndTimeRef.current);
+      saveTimerState({
+        mode: modeRef.current,
+        secondsLeft: remaining,
+        isRunning: true,
+        sessionsCompleted: sessionsCompletedRef.current,
+        sessionStartTime: sessionStartTimeRef.current?.toISOString() ?? null,
+        targetEndTime: targetEndTimeRef.current,
+        lastCompletedSessionKey: lastSavedSessionKeyRef.current,
+        savedAt: Date.now(),
+      });
+    }
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
   }, [syncRunningTimer]);
 
   const partnerMinutes = partnerDeepWork.reduce(
@@ -750,7 +782,7 @@ export function TimerView({
     targetEndTimeRef.current = null;
     isRunningRef.current = false;
 
-    if (wasRunning && modeRef.current === "work") {
+    if (modeRef.current === "work" && (wasRunning || sessionStartTimeRef.current)) {
       void saveSession();
     }
 
