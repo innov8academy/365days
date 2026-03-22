@@ -49,7 +49,24 @@ export async function runDailySummary(targetDate?: string) {
     .lte("start_date", today)
     .gte("end_date", today);
 
-  const isBreakDay = activeBreaks && activeBreaks.length > 0;
+  // Determine per-user break status:
+  // - mutual/emergency breaks → break day for ALL users
+  // - solo breaks → break day ONLY for the requester
+  const hasMutualBreak = activeBreaks?.some(
+    (b) => b.type === "mutual" || b.type === "emergency"
+  ) ?? false;
+  const soloBreakUserIds = new Set(
+    activeBreaks
+      ?.filter((b) => b.type === "solo")
+      .map((b) => b.requested_by) ?? []
+  );
+
+  function isBreakDayForUser(userId: string): boolean {
+    if (hasMutualBreak) return true;
+    return soloBreakUserIds.has(userId);
+  }
+
+  const isBreakDay = hasMutualBreak || soloBreakUserIds.size > 0;
 
   const results = [];
   const userDeepWorkStatus: Record<string, boolean> = {};
@@ -78,8 +95,8 @@ export async function runDailySummary(targetDate?: string) {
     let points = 0;
     let hitTarget = true;
 
-    if (isBreakDay) {
-      // Break day: 0 points, streak maintained
+    if (isBreakDayForUser(profile.id)) {
+      // Break day for this user: 0 points, streak maintained
       userDeepWorkStatus[profile.id] = true;
     } else {
       // Calculate points (all-or-nothing)
@@ -141,71 +158,84 @@ export async function runDailySummary(targetDate?: string) {
     });
   }
 
-  // Update streak (skip if break day or processing an older date than what's already been processed)
+  // Update streak
   const isOlderDate = streak?.last_active_date && streak.last_active_date >= today;
   const oldStatus = streak?.status;
-  if (!isBreakDay && streak && !isOlderDate) {
-    const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
-    const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
+  if (streak && !isOlderDate) {
+    if (hasMutualBreak) {
+      // Mutual/emergency break day: freeze streak (no count change) but advance
+      // last_active_date so the system knows this date was processed
+      await supabase
+        .from("streaks")
+        .update({
+          last_active_date: today,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", streak.id);
+    } else {
+      // Normal day (or solo-break day where partner still needs evaluation)
+      const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
+      const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
 
-    let newStatus = streak.status;
-    let newCount = streak.current_count;
-    let newRecoveryDays = streak.recovery_days_remaining;
-    let newBest = streak.best_count;
-    let recoveryBy = streak.recovery_required_by;
+      let newStatus = streak.status;
+      let newCount = streak.current_count;
+      let newRecoveryDays = streak.recovery_days_remaining;
+      let newBest = streak.best_count;
+      let recoveryBy = streak.recovery_required_by;
 
-    if (streak.status === "active") {
-      if (allHitTarget) {
-        newCount += 1;
-        if (newCount > newBest) newBest = newCount;
-      } else if (anyMissed) {
-        if (newCount === 0) {
-          // No streak built yet — just stay at 0, don't penalize with recovery
-          // (nothing to recover)
-        } else {
-          newStatus = "recovery";
-          newRecoveryDays = STREAK_RECOVERY_DAYS;
-          const missedUser = Object.entries(userDeepWorkStatus).find(
-            ([, v]) => !v
-          );
-          recoveryBy = missedUser ? missedUser[0] : null;
+      if (streak.status === "active") {
+        if (allHitTarget) {
+          newCount += 1;
+          if (newCount > newBest) newBest = newCount;
+        } else if (anyMissed) {
+          if (newCount === 0) {
+            // No streak built yet — just stay at 0, don't penalize with recovery
+            // (nothing to recover)
+          } else {
+            newStatus = "recovery";
+            newRecoveryDays = STREAK_RECOVERY_DAYS;
+            const missedUser = Object.entries(userDeepWorkStatus).find(
+              ([, v]) => !v
+            );
+            recoveryBy = missedUser ? missedUser[0] : null;
+          }
         }
-      }
-    } else if (streak.status === "recovery") {
-      if (allHitTarget) {
-        newRecoveryDays -= 1;
-        if (newRecoveryDays <= 0) {
-          newStatus = "active";
+      } else if (streak.status === "recovery") {
+        if (allHitTarget) {
+          newRecoveryDays -= 1;
+          if (newRecoveryDays <= 0) {
+            newStatus = "active";
+            newRecoveryDays = 0;
+            recoveryBy = null;
+          }
+        } else {
+          newStatus = "broken";
+          newCount = 0;
           newRecoveryDays = 0;
           recoveryBy = null;
         }
-      } else {
-        newStatus = "broken";
-        newCount = 0;
-        newRecoveryDays = 0;
-        recoveryBy = null;
+      } else if (streak.status === "broken") {
+        if (allHitTarget) {
+          newStatus = "active";
+          newCount = 1;
+          newRecoveryDays = 0;
+          recoveryBy = null;
+        }
       }
-    } else if (streak.status === "broken") {
-      if (allHitTarget) {
-        newStatus = "active";
-        newCount = 1;
-        newRecoveryDays = 0;
-        recoveryBy = null;
-      }
-    }
 
-    await supabase
-      .from("streaks")
-      .update({
-        current_count: newCount,
-        best_count: newBest,
-        last_active_date: today,
-        status: newStatus,
-        recovery_days_remaining: newRecoveryDays,
-        recovery_required_by: recoveryBy,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", streak.id);
+      await supabase
+        .from("streaks")
+        .update({
+          current_count: newCount,
+          best_count: newBest,
+          last_active_date: today,
+          status: newStatus,
+          recovery_days_remaining: newRecoveryDays,
+          recovery_required_by: recoveryBy,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", streak.id);
+    }
   }
 
   // Award achievements for each user
