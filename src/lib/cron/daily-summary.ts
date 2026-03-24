@@ -5,6 +5,7 @@ import {
   POINTS_DEEP_WORK_BONUS,
   POINTS_DEEP_WORK_BONUS_THRESHOLD,
   POINTS_STREAK_BONUS,
+  POINTS_EARLY_WAKE_PENALTY,
   DEEP_WORK_DAILY_TARGET,
   DEEP_WORK_RECOVERY_TARGET,
   STREAK_RECOVERY_DAYS,
@@ -51,22 +52,21 @@ export async function runDailySummary(targetDate?: string) {
 
   // Determine per-user break status:
   // - mutual/emergency breaks → break day for ALL users
-  // - solo breaks → break day ONLY for the requester
+  // - solo breaks → break day for ALL users (fairness: partner shouldn't
+  //   gain an advantage while the other person is on break)
   const hasMutualBreak = activeBreaks?.some(
     (b) => b.type === "mutual" || b.type === "emergency"
   ) ?? false;
-  const soloBreakUserIds = new Set(
-    activeBreaks
-      ?.filter((b) => b.type === "solo")
-      .map((b) => b.requested_by) ?? []
-  );
+  const hasAnySoloBreak = activeBreaks?.some(
+    (b) => b.type === "solo"
+  ) ?? false;
 
-  function isBreakDayForUser(userId: string): boolean {
+  function isBreakDayForUser(_userId: string): boolean {
     if (hasMutualBreak) return true;
-    return soloBreakUserIds.has(userId);
+    return hasAnySoloBreak;
   }
 
-  const isBreakDay = hasMutualBreak || soloBreakUserIds.size > 0;
+  const isBreakDay = hasMutualBreak || hasAnySoloBreak;
 
   const results = [];
   const userDeepWorkStatus: Record<string, boolean> = {};
@@ -116,6 +116,23 @@ export async function runDailySummary(targetDate?: string) {
         points += POINTS_STREAK_BONUS;
       }
 
+      // Early wake-up check (Sivakami only)
+      // She must add at least 1 task between 6:00-6:15 AM IST to avoid penalty.
+      // Skip if she has zero tasks — the no-tasks penalty already covers that.
+      const sivakamiId = process.env.SIVAKAMI_USER_ID;
+      if (sivakamiId && profile.id === sivakamiId && tasksTotal > 0) {
+        // 6:00 AM IST = 00:30 UTC, 6:15 AM IST = 00:45 UTC
+        const wakeStart = new Date(`${today}T00:30:00Z`);
+        const wakeEnd = new Date(`${today}T00:45:00Z`);
+        const hasEarlyTask = tasks?.some((t) => {
+          const createdAt = new Date(t.created_at);
+          return createdAt >= wakeStart && createdAt <= wakeEnd;
+        }) ?? false;
+        if (!hasEarlyTask) {
+          points += POINTS_EARLY_WAKE_PENALTY;
+        }
+      }
+
       // Determine deep work target based on streak status
       const target =
         streak?.status === "recovery" &&
@@ -162,8 +179,8 @@ export async function runDailySummary(targetDate?: string) {
   const isOlderDate = streak?.last_active_date && streak.last_active_date >= today;
   const oldStatus = streak?.status;
   if (streak && !isOlderDate) {
-    if (hasMutualBreak) {
-      // Mutual/emergency break day: freeze streak (no count change) but advance
+    if (hasMutualBreak || hasAnySoloBreak) {
+      // Any break day: freeze streak (no count change) but advance
       // last_active_date so the system knows this date was processed
       await supabase
         .from("streaks")
@@ -173,7 +190,7 @@ export async function runDailySummary(targetDate?: string) {
         })
         .eq("id", streak.id);
     } else {
-      // Normal day (or solo-break day where partner still needs evaluation)
+      // Normal day — both users evaluated for streak
       const allHitTarget = Object.values(userDeepWorkStatus).every((v) => v);
       const anyMissed = Object.values(userDeepWorkStatus).some((v) => !v);
 
