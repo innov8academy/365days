@@ -6,6 +6,7 @@ import {
   POINTS_DEEP_WORK_BONUS_THRESHOLD,
   POINTS_STREAK_BONUS,
   POINTS_EARLY_WAKE_PENALTY,
+  POINTS_EARLY_SESSION_PENALTY,
   DEEP_WORK_DAILY_TARGET,
   DEEP_WORK_RECOVERY_TARGET,
   STREAK_RECOVERY_DAYS,
@@ -130,6 +131,21 @@ export async function runDailySummary(targetDate?: string) {
         }) ?? false;
         if (!hasEarlyTask) {
           points += POINTS_EARLY_WAKE_PENALTY;
+        }
+      }
+
+      // Early session check (Sivakami only)
+      // She must start her first pomodoro session before 6:35 AM IST or lose points.
+      // This prevents adding a task and going back to sleep.
+      if (sivakamiId && profile.id === sivakamiId) {
+        // 6:35 AM IST = 01:05 UTC
+        const sessionDeadline = new Date(`${today}T01:05:00Z`);
+        const hasEarlySession = sessions?.some((s) => {
+          const startedAt = new Date(s.started_at);
+          return startedAt <= sessionDeadline;
+        }) ?? false;
+        if (!hasEarlySession) {
+          points += POINTS_EARLY_SESSION_PENALTY;
         }
       }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/hooks/use-auth";
-import { useActiveCompetition, useSummaries, useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak } from "@/lib/hooks/use-data";
+import { useActiveCompetition, useSummaries, useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useBreaks } from "@/lib/hooks/use-data";
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
 import { LeaderboardSkeleton } from "@/components/shared/skeleton-page";
 import { calculateDailyPoints } from "@/lib/points";
@@ -18,6 +18,7 @@ export default function LeaderboardPage() {
   const { data: yesterdayTasks } = useYesterdayTasks();
   const { data: yesterdayDeepWork } = useYesterdayDeepWork();
   const { data: streak } = useStreak();
+  const { data: allBreaks } = useBreaks();
   const supabase = createClient();
 
   const { data: pastCompetitions } = useSWR("past-competitions", async () => {
@@ -35,19 +36,24 @@ export default function LeaderboardPage() {
   const today = getToday();
   const streakActive = streak?.status === "active" && (streak?.current_count ?? 0) > 0;
 
+  // Check if today is a break day (any approved break covering today → both users get 0)
+  const isTodayBreakDay = allBreaks?.some(
+    (b) => b.approved && b.start_date <= today && b.end_date >= today
+  ) ?? false;
+
   // Calculate today's points live (only if tasks have been written — don't penalize for empty day)
   const myTasks = allTasks?.filter((t) => t.user_id === user.id) ?? [];
   const partnerTasks = allTasks?.filter((t) => t.user_id !== user.id) ?? [];
   const myDW = allDeepWork?.filter((s) => s.user_id === user.id) ?? [];
   const partnerDW = allDeepWork?.filter((s) => s.user_id !== user.id) ?? [];
 
-  const myTodayPoints = myTasks.length > 0 ? calculateDailyPoints({
+  const myTodayPoints = isTodayBreakDay ? 0 : myTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: myTasks.length,
     tasksCompleted: myTasks.filter((t) => t.completed).length,
     deepWorkMinutes: myDW.reduce((sum, s) => sum + s.duration_minutes, 0),
     streakActive,
   }) : 0;
-  const partnerTodayPoints = partnerTasks.length > 0 ? calculateDailyPoints({
+  const partnerTodayPoints = isTodayBreakDay ? 0 : partnerTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: partnerTasks.length,
     tasksCompleted: partnerTasks.filter((t) => t.completed).length,
     deepWorkMinutes: partnerDW.reduce((sum, s) => sum + s.duration_minutes, 0),

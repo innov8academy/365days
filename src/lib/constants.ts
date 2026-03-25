@@ -49,6 +49,12 @@ export const EARLY_WAKE_WINDOW_START_M = 0;
 export const EARLY_WAKE_WINDOW_END_H = 6;
 export const EARLY_WAKE_WINDOW_END_M = 15;
 
+// Early session accountability (Sivakami only)
+// Must start first pomodoro session before 6:35 AM IST or lose points
+export const POINTS_EARLY_SESSION_PENALTY = -2;
+export const EARLY_SESSION_DEADLINE_H = 6;
+export const EARLY_SESSION_DEADLINE_M = 35;
+
 // Task validation
 export const TASK_TITLE_MAX_LENGTH = 200;
 

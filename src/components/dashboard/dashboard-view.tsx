@@ -17,12 +17,14 @@ import {
   CheckCircle2,
   XCircle,
   Award,
+  AlarmClock,
 } from "lucide-react";
 import { BadgeCard } from "@/components/badges/badge-card";
 import { EquippedBadge } from "@/components/badges/equipped-badge";
 import { ACHIEVEMENTS, TIER_CONFIG, getEvolutionTier, getAchievementById } from "@/lib/achievements";
 import { formatMinutesToHours, formatTime } from "@/lib/dates";
 import { DEEP_WORK_DAILY_TARGET } from "@/lib/constants";
+import type { DeepWorkSession } from "@/types/database";
 import type { DailyTask, Streak, Competition, UserAchievement } from "@/types/database";
 
 interface DashboardViewProps {
@@ -42,6 +44,7 @@ interface DashboardViewProps {
   partnerLastSeen?: string | null;
   partnerTimer?: { mode: string; secondsLeft: number; isRunning: boolean } | null;
   achievements?: UserAchievement[];
+  mySessions?: DeepWorkSession[];
   myEquippedBadge?: string | null;
   partnerEquippedBadge?: string | null;
 }
@@ -60,6 +63,7 @@ export function DashboardView({
   partnerPresence = "offline",
   partnerLastSeen,
   partnerTimer,
+  mySessions = [],
   achievements = [],
   myEquippedBadge,
   partnerEquippedBadge,
@@ -81,7 +85,9 @@ export function DashboardView({
   const isPartnerFocusing = partnerTimer?.isRunning && partnerTimer.mode === "work";
 
   // IST-based greeting
-  const istHour = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCHours();
+  const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const istHour = istNow.getUTCHours();
+  const istMinute = istNow.getUTCMinutes();
   const greeting = istHour < 12
     ? `Good morning, ${me?.name ?? "You"} ☀️`
     : istHour < 17
@@ -90,12 +96,95 @@ export function DashboardView({
         ? `Evening grind, ${me?.name ?? "You"} 🔥`
         : `Wind down, ${me?.name ?? "You"} 🌙`;
 
+  // Morning accountability checks (Sivakami only)
+  const isSivakami = me?.name?.toLowerCase() === "sivakami";
+  const showMorningCard = isSivakami && istHour < 8; // Show until 8 AM IST
+
+  // Check 1: Task added between 6:00-6:15 AM IST
+  const hasEarlyTask = myTasks.some((t) => {
+    const d = new Date(t.created_at);
+    const taskIst = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+    const h = taskIst.getUTCHours();
+    const m = taskIst.getUTCMinutes();
+    return h === 6 && m >= 0 && m <= 15;
+  });
+
+  // Check 2: First session started before 6:35 AM IST
+  const hasEarlySession = mySessions.some((s) => {
+    const d = new Date(s.started_at);
+    const sessIst = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+    const h = sessIst.getUTCHours();
+    const m = sessIst.getUTCMinutes();
+    return h < 6 || (h === 6 && m <= 35);
+  });
+
+  // Whether the deadlines have passed yet
+  const pastTaskDeadline = istHour > 6 || (istHour === 6 && istMinute > 15);
+  const pastSessionDeadline = istHour > 6 || (istHour === 6 && istMinute > 35);
+
   return (
     <div className="space-y-5 lg:space-y-6">
       {/* Greeting */}
       <h2 className="font-display text-xl lg:text-2xl font-bold tracking-tight animate-slide-in">
         {greeting}
       </h2>
+
+      {/* Morning Accountability Card (Sivakami only, before 8 AM IST) */}
+      {showMorningCard && (
+        <Card className="border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-orange-500/[0.03] animate-slide-up">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="h-8 w-8 rounded-xl bg-amber-500/[0.12] border border-amber-500/[0.2] flex items-center justify-center">
+                <AlarmClock className="h-4 w-4 text-amber-400" />
+              </div>
+              <span className="text-[15px] font-semibold">Morning Routine</span>
+            </div>
+            <div className="space-y-2.5">
+              {/* Task check */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {hasEarlyTask ? (
+                    <CheckCircle2 className="h-4 w-4 text-success drop-shadow-[0_0_4px_rgba(34,197,94,0.4)]" />
+                  ) : pastTaskDeadline ? (
+                    <XCircle className="h-4 w-4 text-red-500" />
+                  ) : (
+                    <div className="h-4 w-4 rounded-full border-2 border-amber-500/50 animate-pulse" />
+                  )}
+                  <span className="text-sm">Add task by 6:15 AM</span>
+                </div>
+                {hasEarlyTask ? (
+                  <Badge variant="secondary" className="bg-success/10 text-success border-success/20 text-xs">Done</Badge>
+                ) : pastTaskDeadline ? (
+                  <Badge variant="destructive" className="text-xs">-2 pts</Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-xs">Pending</Badge>
+                )}
+              </div>
+              {/* Session check */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {hasEarlySession ? (
+                    <CheckCircle2 className="h-4 w-4 text-success drop-shadow-[0_0_4px_rgba(34,197,94,0.4)]" />
+                  ) : pastSessionDeadline ? (
+                    <XCircle className="h-4 w-4 text-red-500" />
+                  ) : (
+                    <div className="h-4 w-4 rounded-full border-2 border-amber-500/50 animate-pulse" />
+                  )}
+                  <span className="text-sm">Start session by 6:35 AM</span>
+                </div>
+                {hasEarlySession ? (
+                  <Badge variant="secondary" className="bg-success/10 text-success border-success/20 text-xs">Done</Badge>
+                ) : pastSessionDeadline ? (
+                  <Badge variant="destructive" className="text-xs">-2 pts</Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-xs">Pending</Badge>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* HERO: Streak Card */}
       <Link href="/streak" className="block group">
         <div className="relative rounded-2xl overflow-hidden animate-slide-up glow-flame">

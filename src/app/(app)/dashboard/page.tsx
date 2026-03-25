@@ -3,7 +3,7 @@
 import { useAuth } from "@/lib/hooks/use-auth";
 import { usePresence } from "@/lib/hooks/use-presence";
 import { useTimerBroadcast } from "@/lib/hooks/use-timer-broadcast";
-import { useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useActiveCompetition, useSummaries, useAchievements, useGapFiller } from "@/lib/hooks/use-data";
+import { useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useActiveCompetition, useSummaries, useAchievements, useGapFiller, useBreaks } from "@/lib/hooks/use-data";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import { DashboardSkeleton } from "@/components/shared/skeleton-page";
 import { getToday, getYesterday } from "@/lib/dates";
@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const { data: competition } = useActiveCompetition();
   const { data: allSummaries } = useSummaries();
   const { data: achievements } = useAchievements();
+  const { data: allBreaks } = useBreaks();
   useGapFiller();
 
   if (tasksLoading || dwLoading || !user) return <DashboardSkeleton />;
@@ -34,15 +35,20 @@ export default function DashboardPage() {
   const myDeepWorkMinutes = myDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
   const partnerDeepWorkMinutes = partnerDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
 
+  // Check if today is a break day (any approved break covering today → both users get 0)
+  const isTodayBreakDay = allBreaks?.some(
+    (b) => b.approved && b.start_date <= today && b.end_date >= today
+  ) ?? false;
+
   // Calculate today's points live (only if tasks have been written — don't penalize for empty day)
   const streakActive = streak?.status === "active" && (streak?.current_count ?? 0) > 0;
-  const myTodayPoints = myTasks.length > 0 ? calculateDailyPoints({
+  const myTodayPoints = isTodayBreakDay ? 0 : myTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: myTasks.length,
     tasksCompleted: myTasks.filter((t) => t.completed).length,
     deepWorkMinutes: myDeepWorkMinutes,
     streakActive,
   }) : 0;
-  const partnerTodayPoints = partnerTasks.length > 0 ? calculateDailyPoints({
+  const partnerTodayPoints = isTodayBreakDay ? 0 : partnerTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: partnerTasks.length,
     tasksCompleted: partnerTasks.filter((t) => t.completed).length,
     deepWorkMinutes: partnerDeepWorkMinutes,
@@ -95,6 +101,7 @@ export default function DashboardPage() {
       streak={streak ?? null}
       myDeepWorkMinutes={myDeepWorkMinutes}
       partnerDeepWorkMinutes={partnerDeepWorkMinutes}
+      mySessions={myDeepWork}
       myPoints={myPoints}
       partnerPoints={partnerPoints}
       competition={competition ?? null}
