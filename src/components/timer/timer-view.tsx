@@ -257,6 +257,19 @@ function requestNotificationPermission() {
   }
 }
 
+function getDeviceId(): string {
+  const key = "365days-device-id";
+  let id = sessionStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem(key, id);
+  }
+  return id;
+}
+
+const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
+const STALE_THRESHOLD = 60_000; // 60 seconds — consider session stale after this
+
 export function TimerView({
   userId,
   me,
@@ -293,6 +306,7 @@ export function TimerView({
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastSavedSessionKeyRef = useRef<string | null>(null);
   const finishTimerRef = useRef<typeof finishTimer>(null!);
+  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -381,9 +395,15 @@ export function TimerView({
   const saveSession = useCallback(async () => {
     if (!sessionStartTimeRef.current || modeRef.current !== "work") return;
 
-    const elapsedSeconds = Math.max(
-      0,
-      settingsRef.current.workMinutes * 60 - secondsLeftRef.current,
+    // Use wall-clock time, not countdown remainder, to prevent inflated
+    // durations when timer restores from a stale localStorage state
+    // (e.g. mobile PWA killed & reopened showing wrong secondsLeft).
+    const wallClockSeconds = Math.floor(
+      (Date.now() - sessionStartTimeRef.current.getTime()) / 1000
+    );
+    const elapsedSeconds = Math.min(
+      settingsRef.current.workMinutes * 60,
+      Math.max(0, wallClockSeconds),
     );
 
     if (elapsedSeconds < 60) return;
@@ -394,6 +414,66 @@ export function TimerView({
       settingsRef.current.workMinutes,
     );
   }, [saveSessionWithDuration]);
+
+  // Device lock: prevents multiple devices from running timers simultaneously
+  const acquireTimerLock = useCallback(async (): Promise<boolean> => {
+    const deviceId = getDeviceId();
+
+    // Check for existing active session
+    const { data: existing } = await supabase
+      .from("active_timer_sessions")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existing && existing.device_id !== deviceId) {
+      const age = Date.now() - new Date(existing.updated_at).getTime();
+      if (age < STALE_THRESHOLD) {
+        toast.error("Timer is already running on another device");
+        return false;
+      }
+      // Stale session — overwrite it
+    }
+
+    await supabase
+      .from("active_timer_sessions")
+      .upsert({
+        user_id: userId,
+        device_id: deviceId,
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+
+    return true;
+  }, [supabase, userId]);
+
+  const releaseTimerLock = useCallback(async () => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+    await supabase
+      .from("active_timer_sessions")
+      .delete()
+      .eq("user_id", userId);
+  }, [supabase, userId]);
+
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    heartbeatRef.current = setInterval(async () => {
+      await supabase
+        .from("active_timer_sessions")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("user_id", userId);
+    }, HEARTBEAT_INTERVAL);
+  }, [supabase, userId]);
+
+  // Cleanup heartbeat on unmount
+  useEffect(() => {
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    };
+  }, []);
 
   const broadcastState = useCallback(
     (nextSeconds: number, running: boolean, nextMode: TimerMode) => {
@@ -478,6 +558,9 @@ export function TimerView({
           );
         }
 
+        // Release device lock after work session completes
+        void releaseTimerLock();
+
         sessionsCompletedRef.current = newCount;
         setSessionsCompleted(newCount);
 
@@ -508,7 +591,7 @@ export function TimerView({
       showBrowserNotification("Break Over!", "Ready to focus?");
       applyTimerState("work", currentSettings.workMinutes * 60, false);
     },
-    [applyTimerState, saveSessionWithDuration, userId]
+    [applyTimerState, saveSessionWithDuration, releaseTimerLock, userId]
   );
   finishTimerRef.current = finishTimer;
 
@@ -568,6 +651,13 @@ export function TimerView({
           isRunningRef.current = true;
           setSecondsLeft(remaining);
           setIsRunning(true);
+
+          // Re-acquire device lock and restart heartbeat on restore
+          if (saved.mode === "work") {
+            void acquireTimerLock().then((acquired) => {
+              if (acquired) startHeartbeat();
+            });
+          }
         } else {
           secondsLeftRef.current = 0;
           setSecondsLeft(0);
@@ -705,10 +795,17 @@ export function TimerView({
     };
   }, [isRunning, syncRunningTimer]);
 
-  function handleStart() {
+  async function handleStart() {
     if (secondsLeftRef.current <= 0) {
       finishTimer("active");
       return;
+    }
+
+    // Acquire device lock for work sessions
+    if (modeRef.current === "work") {
+      const acquired = await acquireTimerLock();
+      if (!acquired) return;
+      startHeartbeat();
     }
 
     if (modeRef.current === "work" && !sessionStartTimeRef.current) {
@@ -750,6 +847,7 @@ export function TimerView({
 
     if (modeRef.current === "work" && sessionStartTimeRef.current) {
       void saveSession();
+      void releaseTimerLock();
     }
 
     setSessionStartTime(null);
@@ -767,6 +865,7 @@ export function TimerView({
 
     if (modeRef.current === "work" && sessionStartTimeRef.current) {
       void saveSession();
+      void releaseTimerLock();
     }
 
     setSessionStartTime(null);
@@ -784,6 +883,7 @@ export function TimerView({
 
     if (modeRef.current === "work" && (wasRunning || sessionStartTimeRef.current)) {
       void saveSession();
+      void releaseTimerLock();
     }
 
     setIsRunning(false);

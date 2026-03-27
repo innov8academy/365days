@@ -92,6 +92,14 @@ export interface MorningPass {
   created_at: string;
 }
 
+export interface ActiveTimerSession {
+  id: string;
+  user_id: string;
+  started_at: string;
+  device_id: string;
+  updated_at: string;
+}
+
 export interface UserWithPoints extends User {
   total_points: number;
   tasks_completed_days: number;
