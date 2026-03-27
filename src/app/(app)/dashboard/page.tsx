@@ -3,7 +3,8 @@
 import { useAuth } from "@/lib/hooks/use-auth";
 import { usePresence } from "@/lib/hooks/use-presence";
 import { useTimerBroadcast } from "@/lib/hooks/use-timer-broadcast";
-import { useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useActiveCompetition, useSummaries, useAchievements, useGapFiller, useBreaks } from "@/lib/hooks/use-data";
+import { useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useActiveCompetition, useSummaries, useAchievements, useGapFiller, useBreaks, useMorningPasses } from "@/lib/hooks/use-data";
+import { MAX_MORNING_PASSES_PER_MONTH } from "@/lib/constants";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import { DashboardSkeleton } from "@/components/shared/skeleton-page";
 import { getToday, getYesterday } from "@/lib/dates";
@@ -22,6 +23,7 @@ export default function DashboardPage() {
   const { data: allSummaries } = useSummaries();
   const { data: achievements } = useAchievements();
   const { data: allBreaks } = useBreaks();
+  const { data: morningPasses } = useMorningPasses();
   useGapFiller();
 
   if (tasksLoading || dwLoading || !user) return <DashboardSkeleton />;
@@ -40,6 +42,32 @@ export default function DashboardPage() {
     (b) => b.approved && b.start_date <= today && b.end_date >= today
   ) ?? false;
 
+  // Morning pass data for Sivakami
+  const isSivakami = profile?.name?.toLowerCase() === "sivakami";
+  const hasTodayPass = morningPasses?.some((p) => p.date === today) ?? false;
+  const passesUsedThisMonth = morningPasses?.length ?? 0;
+  const passesRemaining = MAX_MORNING_PASSES_PER_MONTH - passesUsedThisMonth;
+
+  // Live morning penalty check (Sivakami only)
+  let myEarlyWakeMet: boolean | undefined;
+  let myEarlySessionMet: boolean | undefined;
+  if (isSivakami) {
+    myEarlyWakeMet = myTasks.some((t) => {
+      const d = new Date(t.created_at);
+      const taskIst = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+      const h = taskIst.getUTCHours();
+      const m = taskIst.getUTCMinutes();
+      return h === 6 && m >= 0 && m <= 15;
+    });
+    myEarlySessionMet = myDeepWork.some((s) => {
+      const d = new Date(s.started_at);
+      const sessIst = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+      const h = sessIst.getUTCHours();
+      const m = sessIst.getUTCMinutes();
+      return h < 6 || (h === 6 && m <= 35);
+    });
+  }
+
   // Calculate today's points live (only if tasks have been written — don't penalize for empty day)
   const streakActive = streak?.status === "active" && (streak?.current_count ?? 0) > 0;
   const myTodayPoints = isTodayBreakDay ? 0 : myTasks.length > 0 ? calculateDailyPoints({
@@ -47,6 +75,9 @@ export default function DashboardPage() {
     tasksCompleted: myTasks.filter((t) => t.completed).length,
     deepWorkMinutes: myDeepWorkMinutes,
     streakActive,
+    earlyWakeMet: myEarlyWakeMet,
+    earlySessionMet: myEarlySessionMet,
+    hasMorningPass: hasTodayPass,
   }) : 0;
   const partnerTodayPoints = isTodayBreakDay ? 0 : partnerTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: partnerTasks.length,
@@ -112,6 +143,8 @@ export default function DashboardPage() {
       achievements={achievements ?? []}
       myEquippedBadge={profile?.equipped_badge}
       partnerEquippedBadge={partner?.equipped_badge}
+      hasTodayPass={hasTodayPass}
+      passesRemaining={passesRemaining}
     />
   );
 }

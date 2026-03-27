@@ -117,35 +117,44 @@ export async function runDailySummary(targetDate?: string) {
         points += POINTS_STREAK_BONUS;
       }
 
-      // Early wake-up check (Sivakami only)
-      // She must add at least 1 task between 6:00-6:15 AM IST to avoid penalty.
-      // Skip if she has zero tasks — the no-tasks penalty already covers that.
+      // Early morning checks (Sivakami only)
       const sivakamiId = process.env.SIVAKAMI_USER_ID;
-      if (sivakamiId && profile.id === sivakamiId && tasksTotal > 0) {
-        // 6:00 AM IST = 00:30 UTC, 6:15 AM IST = 00:45 UTC
-        const wakeStart = new Date(`${today}T00:30:00Z`);
-        const wakeEnd = new Date(`${today}T00:45:00Z`);
-        const hasEarlyTask = tasks?.some((t) => {
-          const createdAt = new Date(t.created_at);
-          return createdAt >= wakeStart && createdAt <= wakeEnd;
-        }) ?? false;
-        if (!hasEarlyTask) {
-          points += POINTS_EARLY_WAKE_PENALTY;
-        }
-      }
-
-      // Early session check (Sivakami only)
-      // She must start her first pomodoro session before 6:35 AM IST or lose points.
-      // This prevents adding a task and going back to sleep.
       if (sivakamiId && profile.id === sivakamiId) {
-        // 6:35 AM IST = 01:05 UTC
-        const sessionDeadline = new Date(`${today}T01:05:00Z`);
-        const hasEarlySession = sessions?.some((s) => {
-          const startedAt = new Date(s.started_at);
-          return startedAt <= sessionDeadline;
-        }) ?? false;
-        if (!hasEarlySession) {
-          points += POINTS_EARLY_SESSION_PENALTY;
+        // Check if she used a morning pass for today
+        const { data: morningPass } = await supabase
+          .from("morning_passes")
+          .select("id")
+          .eq("user_id", sivakamiId)
+          .eq("date", today)
+          .maybeSingle();
+        const hasMorningPass = !!morningPass;
+
+        // Early wake-up check: must add at least 1 task between 6:00-6:15 AM IST.
+        // Skip if she has zero tasks (no-tasks penalty covers that) or has a pass.
+        if (tasksTotal > 0 && !hasMorningPass) {
+          // 6:00 AM IST = 00:30 UTC, 6:15 AM IST = 00:45 UTC
+          const wakeStart = new Date(`${today}T00:30:00Z`);
+          const wakeEnd = new Date(`${today}T00:45:00Z`);
+          const hasEarlyTask = tasks?.some((t) => {
+            const createdAt = new Date(t.created_at);
+            return createdAt >= wakeStart && createdAt <= wakeEnd;
+          }) ?? false;
+          if (!hasEarlyTask) {
+            points += POINTS_EARLY_WAKE_PENALTY;
+          }
+        }
+
+        // Early session check: must start first pomodoro before 6:35 AM IST.
+        if (!hasMorningPass) {
+          // 6:35 AM IST = 01:05 UTC
+          const sessionDeadline = new Date(`${today}T01:05:00Z`);
+          const hasEarlySession = sessions?.some((s) => {
+            const startedAt = new Date(s.started_at);
+            return startedAt <= sessionDeadline;
+          }) ?? false;
+          if (!hasEarlySession) {
+            points += POINTS_EARLY_SESSION_PENALTY;
+          }
         }
       }
 

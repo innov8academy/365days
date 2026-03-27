@@ -85,6 +85,13 @@ export interface UserAchievement {
   metadata: Record<string, unknown>;
 }
 
+export interface MorningPass {
+  id: string;
+  user_id: string;
+  date: string;
+  created_at: string;
+}
+
 export interface UserWithPoints extends User {
   total_points: number;
   tasks_completed_days: number;

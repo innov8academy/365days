@@ -93,6 +93,21 @@ async function fetchAchievements() {
   return data ?? [];
 }
 
+async function fetchMorningPasses() {
+  const today = getToday();
+  const monthStart = today.slice(0, 7) + "-01";
+  // Last day of current month
+  const [y, m] = today.split("-").map(Number);
+  const monthEnd = new Date(y, m, 0).toISOString().split("T")[0];
+  const { data } = await supabase
+    .from("morning_passes")
+    .select("*")
+    .gte("date", monthStart)
+    .lte("date", monthEnd)
+    .order("date", { ascending: false });
+  return data ?? [];
+}
+
 // SWR hooks with fast revalidation
 const swrOptions = {
   revalidateOnFocus: true,
@@ -133,6 +148,10 @@ export function useBreaks() {
 
 export function useAchievements() {
   return useSWR("achievements", fetchAchievements, swrOptions);
+}
+
+export function useMorningPasses() {
+  return useSWR("morning-passes", fetchMorningPasses, swrOptions);
 }
 
 // Auto-trigger daily summary for yesterday if summary or streak is stale
@@ -216,6 +235,13 @@ export function useRealtimeSync() {
         { event: "*", schema: "public", table: "user_achievements" },
         () => {
           mutate("achievements");
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "morning_passes" },
+        () => {
+          mutate("morning-passes");
         }
       )
       .subscribe();

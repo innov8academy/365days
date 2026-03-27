@@ -42,6 +42,9 @@ export const MAX_SOLO_PAUSES_PER_MONTH = 2;
 export const MAX_MUTUAL_BREAK_DAYS = 3;
 export const MAX_EMERGENCY_BREAK_DAYS = 7;
 
+// Morning passes (Sivakami only)
+export const MAX_MORNING_PASSES_PER_MONTH = 5;
+
 // Early wake-up accountability (Sivakami only)
 export const POINTS_EARLY_WAKE_PENALTY = -2;
 export const EARLY_WAKE_WINDOW_START_H = 6;

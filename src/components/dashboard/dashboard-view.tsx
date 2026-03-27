@@ -18,12 +18,15 @@ import {
   XCircle,
   Award,
   AlarmClock,
+  ShieldCheck,
 } from "lucide-react";
 import { BadgeCard } from "@/components/badges/badge-card";
 import { EquippedBadge } from "@/components/badges/equipped-badge";
 import { ACHIEVEMENTS, TIER_CONFIG, getEvolutionTier, getAchievementById } from "@/lib/achievements";
 import { formatMinutesToHours, formatTime } from "@/lib/dates";
-import { DEEP_WORK_DAILY_TARGET } from "@/lib/constants";
+import { DEEP_WORK_DAILY_TARGET, MAX_MORNING_PASSES_PER_MONTH } from "@/lib/constants";
+import { createClient } from "@/lib/supabase/client";
+import { mutate } from "swr";
 import type { DeepWorkSession } from "@/types/database";
 import type { DailyTask, Streak, Competition, UserAchievement } from "@/types/database";
 
@@ -47,6 +50,8 @@ interface DashboardViewProps {
   mySessions?: DeepWorkSession[];
   myEquippedBadge?: string | null;
   partnerEquippedBadge?: string | null;
+  hasTodayPass?: boolean;
+  passesRemaining?: number;
 }
 
 export function DashboardView({
@@ -60,6 +65,7 @@ export function DashboardView({
   myPoints,
   partnerPoints,
   competition,
+  today,
   partnerPresence = "offline",
   partnerLastSeen,
   partnerTimer,
@@ -67,6 +73,8 @@ export function DashboardView({
   achievements = [],
   myEquippedBadge,
   partnerEquippedBadge,
+  hasTodayPass = false,
+  passesRemaining = MAX_MORNING_PASSES_PER_MONTH,
 }: DashboardViewProps) {
   const myCompleted = myTasks.filter((t) => t.completed).length;
   const myTotal = myTasks.length;
@@ -98,7 +106,6 @@ export function DashboardView({
 
   // Morning accountability checks (Sivakami only)
   const isSivakami = me?.name?.toLowerCase() === "sivakami";
-  const showMorningCard = isSivakami && istHour < 8; // Show until 8 AM IST
 
   // Check 1: Task added between 6:00-6:15 AM IST
   const hasEarlyTask = myTasks.some((t) => {
@@ -129,15 +136,25 @@ export function DashboardView({
         {greeting}
       </h2>
 
-      {/* Morning Accountability Card (Sivakami only, before 8 AM IST) */}
-      {showMorningCard && (
-        <Card className="border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-orange-500/[0.03] animate-slide-up">
+      {/* Morning Accountability Card (Sivakami only) */}
+      {/* Show before 8 AM always, or all day if penalties missed & no pass used */}
+      {isSivakami && (istHour < 8 || ((!hasEarlyTask || !hasEarlySession) && pastSessionDeadline && !hasTodayPass)) && (
+        <Card className={`animate-slide-up ${hasTodayPass ? "border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.06] to-green-500/[0.03]" : "border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-orange-500/[0.03]"}`}>
           <CardContent className="py-4">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="h-8 w-8 rounded-xl bg-amber-500/[0.12] border border-amber-500/[0.2] flex items-center justify-center">
-                <AlarmClock className="h-4 w-4 text-amber-400" />
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`h-8 w-8 rounded-xl flex items-center justify-center ${hasTodayPass ? "bg-emerald-500/[0.12] border border-emerald-500/[0.2]" : "bg-amber-500/[0.12] border border-amber-500/[0.2]"}`}>
+                  {hasTodayPass ? (
+                    <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                  ) : (
+                    <AlarmClock className="h-4 w-4 text-amber-400" />
+                  )}
+                </div>
+                <span className="text-[15px] font-semibold">Morning Routine</span>
               </div>
-              <span className="text-[15px] font-semibold">Morning Routine</span>
+              <Badge variant="secondary" className="text-xs">
+                {passesRemaining}/{MAX_MORNING_PASSES_PER_MONTH} passes left
+              </Badge>
             </div>
             <div className="space-y-2.5">
               {/* Task check */}
@@ -145,6 +162,8 @@ export function DashboardView({
                 <div className="flex items-center gap-2">
                   {hasEarlyTask ? (
                     <CheckCircle2 className="h-4 w-4 text-success drop-shadow-[0_0_4px_rgba(34,197,94,0.4)]" />
+                  ) : hasTodayPass ? (
+                    <ShieldCheck className="h-4 w-4 text-emerald-400" />
                   ) : pastTaskDeadline ? (
                     <XCircle className="h-4 w-4 text-red-500" />
                   ) : (
@@ -154,6 +173,8 @@ export function DashboardView({
                 </div>
                 {hasEarlyTask ? (
                   <Badge variant="secondary" className="bg-success/10 text-success border-success/20 text-xs">Done</Badge>
+                ) : hasTodayPass ? (
+                  <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">Pass Used</Badge>
                 ) : pastTaskDeadline ? (
                   <Badge variant="destructive" className="text-xs">-2 pts</Badge>
                 ) : (
@@ -165,6 +186,8 @@ export function DashboardView({
                 <div className="flex items-center gap-2">
                   {hasEarlySession ? (
                     <CheckCircle2 className="h-4 w-4 text-success drop-shadow-[0_0_4px_rgba(34,197,94,0.4)]" />
+                  ) : hasTodayPass ? (
+                    <ShieldCheck className="h-4 w-4 text-emerald-400" />
                   ) : pastSessionDeadline ? (
                     <XCircle className="h-4 w-4 text-red-500" />
                   ) : (
@@ -174,12 +197,38 @@ export function DashboardView({
                 </div>
                 {hasEarlySession ? (
                   <Badge variant="secondary" className="bg-success/10 text-success border-success/20 text-xs">Done</Badge>
+                ) : hasTodayPass ? (
+                  <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">Pass Used</Badge>
                 ) : pastSessionDeadline ? (
                   <Badge variant="destructive" className="text-xs">-2 pts</Badge>
                 ) : (
                   <Badge variant="secondary" className="text-xs">Pending</Badge>
                 )}
               </div>
+              {/* Use Pass button — show when at least one penalty was missed and no pass active */}
+              {!hasTodayPass && pastSessionDeadline && (!hasEarlyTask || !hasEarlySession) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full mt-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  disabled={passesRemaining <= 0}
+                  onClick={async () => {
+                    const supabase = createClient();
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (!user) return;
+                    await supabase.from("morning_passes").insert({
+                      user_id: user.id,
+                      date: today,
+                    });
+                    mutate("morning-passes");
+                  }}
+                >
+                  <ShieldCheck className="h-4 w-4 mr-1.5" />
+                  {passesRemaining > 0
+                    ? `Use Morning Pass (${passesRemaining} left)`
+                    : "No passes remaining"}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

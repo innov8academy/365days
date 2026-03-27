@@ -5,6 +5,8 @@ import {
   POINTS_DEEP_WORK_BONUS,
   POINTS_DEEP_WORK_BONUS_THRESHOLD,
   POINTS_STREAK_BONUS,
+  POINTS_EARLY_WAKE_PENALTY,
+  POINTS_EARLY_SESSION_PENALTY,
 } from "./constants";
 
 export function calculateDailyPoints({
@@ -12,11 +14,17 @@ export function calculateDailyPoints({
   tasksCompleted,
   deepWorkMinutes,
   streakActive,
+  earlyWakeMet,
+  earlySessionMet,
+  hasMorningPass,
 }: {
   tasksTotal: number;
   tasksCompleted: number;
   deepWorkMinutes: number;
   streakActive: boolean;
+  earlyWakeMet?: boolean;
+  earlySessionMet?: boolean;
+  hasMorningPass?: boolean;
 }): number {
   let points = 0;
 
@@ -37,6 +45,16 @@ export function calculateDailyPoints({
   // Streak bonus
   if (streakActive) {
     points += POINTS_STREAK_BONUS;
+  }
+
+  // Morning penalties (Sivakami only — only applied when explicitly passed)
+  if (!hasMorningPass) {
+    if (earlyWakeMet === false && tasksTotal > 0) {
+      points += POINTS_EARLY_WAKE_PENALTY;
+    }
+    if (earlySessionMet === false) {
+      points += POINTS_EARLY_SESSION_PENALTY;
+    }
   }
 
   return points;
