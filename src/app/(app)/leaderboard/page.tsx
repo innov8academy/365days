@@ -1,7 +1,8 @@
 "use client";
 
 import { useAuth } from "@/lib/hooks/use-auth";
-import { useActiveCompetition, useSummaries, useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useBreaks } from "@/lib/hooks/use-data";
+import { useActiveCompetition, useSummaries, useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWork, useStreak, useBreaks, useMorningPasses } from "@/lib/hooks/use-data";
+import { MAX_MORNING_PASSES_PER_MONTH } from "@/lib/constants";
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
 import { LeaderboardSkeleton } from "@/components/shared/skeleton-page";
 import { calculateDailyPoints } from "@/lib/points";
@@ -19,6 +20,7 @@ export default function LeaderboardPage() {
   const { data: yesterdayDeepWork } = useYesterdayDeepWork();
   const { data: streak } = useStreak();
   const { data: allBreaks } = useBreaks();
+  const { data: morningPasses } = useMorningPasses();
   const supabase = createClient();
 
   const { data: pastCompetitions } = useSWR("past-competitions", async () => {
@@ -47,17 +49,41 @@ export default function LeaderboardPage() {
   const myDW = allDeepWork?.filter((s) => s.user_id === user.id) ?? [];
   const partnerDW = allDeepWork?.filter((s) => s.user_id !== user.id) ?? [];
 
+  // Morning penalty awareness (Sivakami = partner from Alex's perspective, or self)
+  const isMeSivakami = profile?.name?.toLowerCase() === "sivakami";
+  const isPartnerSivakami = partner?.name?.toLowerCase() === "sivakami";
+  const hasTodayPass = morningPasses?.some((p) => p.date === today) ?? false;
+
+  function computeMorningPenalties(tasks: typeof myTasks, sessions: typeof myDW) {
+    const earlyWakeMet = tasks.some((t) => {
+      const d = new Date(t.created_at);
+      const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+      return ist.getUTCHours() === 6 && ist.getUTCMinutes() >= 0 && ist.getUTCMinutes() <= 15;
+    });
+    const earlySessionMet = sessions.some((s) => {
+      const d = new Date(s.started_at);
+      const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+      return ist.getUTCHours() < 6 || (ist.getUTCHours() === 6 && ist.getUTCMinutes() <= 35);
+    });
+    return { earlyWakeMet, earlySessionMet };
+  }
+
+  const myPenalties = isMeSivakami ? computeMorningPenalties(myTasks, myDW) : {};
+  const partnerPenalties = isPartnerSivakami ? computeMorningPenalties(partnerTasks, partnerDW) : {};
+
   const myTodayPoints = isTodayBreakDay ? 0 : myTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: myTasks.length,
     tasksCompleted: myTasks.filter((t) => t.completed).length,
     deepWorkMinutes: myDW.reduce((sum, s) => sum + s.duration_minutes, 0),
     streakActive,
+    ...(isMeSivakami ? { ...myPenalties, hasMorningPass: hasTodayPass } : {}),
   }) : 0;
   const partnerTodayPoints = isTodayBreakDay ? 0 : partnerTasks.length > 0 ? calculateDailyPoints({
     tasksTotal: partnerTasks.length,
     tasksCompleted: partnerTasks.filter((t) => t.completed).length,
     deepWorkMinutes: partnerDW.reduce((sum, s) => sum + s.duration_minutes, 0),
     streakActive,
+    ...(isPartnerSivakami ? { ...partnerPenalties, hasMorningPass: hasTodayPass } : {}),
   }) : 0;
 
   let myPoints = 0;
