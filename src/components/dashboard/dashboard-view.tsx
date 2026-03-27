@@ -136,9 +136,8 @@ export function DashboardView({
         {greeting}
       </h2>
 
-      {/* Morning Accountability Card (Sivakami only) */}
-      {/* Show before 8 AM always, or all day if penalties missed & no pass used */}
-      {isSivakami && (istHour < 8 || ((!hasEarlyTask || !hasEarlySession) && pastSessionDeadline && !hasTodayPass)) && (
+      {/* Morning Accountability Card (Sivakami only — always visible) */}
+      {isSivakami && (
         <Card className={`animate-slide-up ${hasTodayPass ? "border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.06] to-green-500/[0.03]" : "border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-orange-500/[0.03]"}`}>
           <CardContent className="py-4">
             <div className="flex items-center justify-between mb-3">
