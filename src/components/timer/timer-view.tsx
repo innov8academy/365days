@@ -416,33 +416,39 @@ export function TimerView({
   }, [saveSessionWithDuration]);
 
   // Device lock: prevents multiple devices from running timers simultaneously
+  // All lock operations are fail-safe — if the table doesn't exist yet or
+  // network fails, the timer still works (just without cross-device protection).
   const acquireTimerLock = useCallback(async (): Promise<boolean> => {
-    const deviceId = getDeviceId();
+    try {
+      const deviceId = getDeviceId();
 
-    // Check for existing active session
-    const { data: existing } = await supabase
-      .from("active_timer_sessions")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
+      // Check for existing active session
+      const { data: existing } = await supabase
+        .from("active_timer_sessions")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
 
-    if (existing && existing.device_id !== deviceId) {
-      const age = Date.now() - new Date(existing.updated_at).getTime();
-      if (age < STALE_THRESHOLD) {
-        toast.error("Timer is already running on another device");
-        return false;
+      if (existing && existing.device_id !== deviceId) {
+        const age = Date.now() - new Date(existing.updated_at).getTime();
+        if (age < STALE_THRESHOLD) {
+          toast.error("Timer is already running on another device");
+          return false;
+        }
+        // Stale session — overwrite it
       }
-      // Stale session — overwrite it
-    }
 
-    await supabase
-      .from("active_timer_sessions")
-      .upsert({
-        user_id: userId,
-        device_id: deviceId,
-        started_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
+      await supabase
+        .from("active_timer_sessions")
+        .upsert({
+          user_id: userId,
+          device_id: deviceId,
+          started_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+    } catch {
+      // Table may not exist yet — proceed without lock
+    }
 
     return true;
   }, [supabase, userId]);
@@ -452,19 +458,27 @@ export function TimerView({
       clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
     }
-    await supabase
-      .from("active_timer_sessions")
-      .delete()
-      .eq("user_id", userId);
+    try {
+      await supabase
+        .from("active_timer_sessions")
+        .delete()
+        .eq("user_id", userId);
+    } catch {
+      // Table may not exist yet — ignore
+    }
   }, [supabase, userId]);
 
   const startHeartbeat = useCallback(() => {
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     heartbeatRef.current = setInterval(async () => {
-      await supabase
-        .from("active_timer_sessions")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("user_id", userId);
+      try {
+        await supabase
+          .from("active_timer_sessions")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("user_id", userId);
+      } catch {
+        // Table may not exist yet — ignore
+      }
     }, HEARTBEAT_INTERVAL);
   }, [supabase, userId]);
 
