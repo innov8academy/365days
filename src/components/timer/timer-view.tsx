@@ -395,16 +395,11 @@ export function TimerView({
   const saveSession = useCallback(async () => {
     if (!sessionStartTimeRef.current || modeRef.current !== "work") return;
 
-    // Use wall-clock time, not countdown remainder, to prevent inflated
-    // durations when timer restores from a stale localStorage state
-    // (e.g. mobile PWA killed & reopened showing wrong secondsLeft).
-    const wallClockSeconds = Math.floor(
-      (Date.now() - sessionStartTimeRef.current.getTime()) / 1000
-    );
-    const elapsedSeconds = Math.min(
-      settingsRef.current.workMinutes * 60,
-      Math.max(0, wallClockSeconds),
-    );
+    // Use the timer countdown (total − remaining) so that paused time is
+    // excluded.  secondsLeftRef freezes on pause and counts down via
+    // wall-clock targetEndTime while running, so this is always accurate.
+    const totalSeconds = settingsRef.current.workMinutes * 60;
+    const elapsedSeconds = Math.max(0, totalSeconds - secondsLeftRef.current);
 
     if (elapsedSeconds < 60) return;
 
@@ -855,6 +850,12 @@ export function TimerView({
   }
 
   function handleStop() {
+    // Sync remaining seconds from wall clock before clearing target so
+    // saveSession sees the accurate countdown value (excludes pause time).
+    if (targetEndTimeRef.current !== null) {
+      secondsLeftRef.current = getRemainingSeconds(targetEndTimeRef.current);
+    }
+
     targetEndTimeRef.current = null;
     isRunningRef.current = false;
     setIsRunning(false);
@@ -873,6 +874,10 @@ export function TimerView({
   }
 
   function handleReset() {
+    if (targetEndTimeRef.current !== null) {
+      secondsLeftRef.current = getRemainingSeconds(targetEndTimeRef.current);
+    }
+
     targetEndTimeRef.current = null;
     isRunningRef.current = false;
     setIsRunning(false);
@@ -892,6 +897,9 @@ export function TimerView({
 
   function switchMode(newMode: TimerMode) {
     const wasRunning = isRunningRef.current;
+    if (targetEndTimeRef.current !== null) {
+      secondsLeftRef.current = getRemainingSeconds(targetEndTimeRef.current);
+    }
     targetEndTimeRef.current = null;
     isRunningRef.current = false;
 
