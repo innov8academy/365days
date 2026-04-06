@@ -136,12 +136,12 @@ export async function runDailySummary(targetDate?: string) {
         // Early wake-up check: must add at least 1 task between 6:00-6:15 AM IST.
         // Skip if she has zero tasks (no-tasks penalty covers that) or has a pass.
         if (tasksTotal > 0 && !hasMorningPass) {
-          // 6:00 AM IST = 00:30 UTC, 6:15 AM IST = 00:45 UTC
+          // 6:00 AM IST = 00:30 UTC, 6:16 AM IST = 00:46 UTC (< gives full 6:15 minute)
           const wakeStart = new Date(`${today}T00:30:00Z`);
-          const wakeEnd = new Date(`${today}T00:45:00Z`);
+          const wakeEnd = new Date(`${today}T00:46:00Z`);
           const hasEarlyTask = tasks?.some((t) => {
             const createdAt = new Date(t.created_at);
-            return createdAt >= wakeStart && createdAt <= wakeEnd;
+            return createdAt >= wakeStart && createdAt < wakeEnd;
           }) ?? false;
           if (!hasEarlyTask) {
             points += POINTS_EARLY_WAKE_PENALTY;
@@ -150,11 +150,11 @@ export async function runDailySummary(targetDate?: string) {
 
         // Early session check: must start first pomodoro before 6:35 AM IST.
         if (!hasMorningPass) {
-          // 6:35 AM IST = 01:05 UTC
-          const sessionDeadline = new Date(`${today}T01:05:00Z`);
+          // 6:36 AM IST = 01:06 UTC (< gives full 6:35 minute, matches dashboard)
+          const sessionDeadline = new Date(`${today}T01:06:00Z`);
           const hasEarlySession = sessions?.some((s) => {
             const startedAt = new Date(s.started_at);
-            return startedAt <= sessionDeadline;
+            return startedAt < sessionDeadline;
           }) ?? false;
           if (!hasEarlySession) {
             points += POINTS_EARLY_SESSION_PENALTY;
