@@ -12,6 +12,7 @@ import {
   STREAK_RECOVERY_DAYS,
 } from "@/lib/constants";
 import { awardAchievements } from "@/lib/cron/award-achievements";
+import { isSunday } from "@/lib/dates";
 
 export async function runDailySummary(targetDate?: string) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -62,12 +63,15 @@ export async function runDailySummary(targetDate?: string) {
     (b) => b.type === "solo"
   ) ?? false;
 
+  // Sunday is a weekly free day — no points, no streak impact
+  const isFreeDay = isSunday(today);
+
   function isBreakDayForUser(_userId: string): boolean {
+    if (isFreeDay) return true;
     if (hasMutualBreak) return true;
     return hasAnySoloBreak;
   }
-
-  const isBreakDay = hasMutualBreak || hasAnySoloBreak;
+  const isBreakDay = hasMutualBreak || hasAnySoloBreak || isFreeDay;
 
   const results = [];
   const userDeepWorkStatus: Record<string, boolean> = {};
@@ -204,7 +208,7 @@ export async function runDailySummary(targetDate?: string) {
   const isOlderDate = streak?.last_active_date && streak.last_active_date >= today;
   const oldStatus = streak?.status;
   if (streak && !isOlderDate) {
-    if (hasMutualBreak || hasAnySoloBreak) {
+    if (hasMutualBreak || hasAnySoloBreak || isFreeDay) {
       // Any break day: freeze streak (no count change) but advance
       // last_active_date so the system knows this date was processed
       await supabase

@@ -7,7 +7,7 @@ import { useTodayTasks, useTodayDeepWork, useYesterdayTasks, useYesterdayDeepWor
 import { MAX_MORNING_PASSES_PER_MONTH } from "@/lib/constants";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import { DashboardSkeleton } from "@/components/shared/skeleton-page";
-import { getToday, getYesterday } from "@/lib/dates";
+import { getToday, getYesterday, isSunday } from "@/lib/dates";
 import { calculateDailyPoints } from "@/lib/points";
 
 export default function DashboardPage() {
@@ -38,9 +38,10 @@ export default function DashboardPage() {
   const partnerDeepWorkMinutes = partnerDeepWork.reduce((sum, s) => sum + s.duration_minutes, 0);
 
   // Check if today is a break day (any approved break covering today → both users get 0)
-  const isTodayBreakDay = allBreaks?.some(
+  // Sunday is always a free day — no points, no streak impact
+  const isTodayBreakDay = isSunday(today) || (allBreaks?.some(
     (b) => b.approved && b.start_date <= today && b.end_date >= today
-  ) ?? false;
+  ) ?? false);
 
   // Morning pass data for Sivakami
   const isSivakami = profile?.name?.toLowerCase() === "sivakami";
@@ -97,28 +98,31 @@ export default function DashboardPage() {
   const hasMyYesterdaySummary = mySummaries.some((s) => s.date === yesterday);
   const hasPartnerYesterdaySummary = partnerSummaries.some((s) => s.date === yesterday);
 
-  if (!hasMyYesterdaySummary && yesterdayTasks && yesterdayDeepWork) {
-    const myYTasks = yesterdayTasks.filter((t) => t.user_id === user.id);
-    const myYDW = yesterdayDeepWork.filter((s) => s.user_id === user.id);
-    if (myYTasks.length > 0) {
-      myPoints += calculateDailyPoints({
-        tasksTotal: myYTasks.length,
-        tasksCompleted: myYTasks.filter((t) => t.completed).length,
-        deepWorkMinutes: myYDW.reduce((sum, s) => sum + s.duration_minutes, 0),
-        streakActive,
-      });
+  // Skip gap fallback on Sundays (free day = 0 points)
+  if (!isSunday(yesterday)) {
+    if (!hasMyYesterdaySummary && yesterdayTasks && yesterdayDeepWork) {
+      const myYTasks = yesterdayTasks.filter((t) => t.user_id === user.id);
+      const myYDW = yesterdayDeepWork.filter((s) => s.user_id === user.id);
+      if (myYTasks.length > 0) {
+        myPoints += calculateDailyPoints({
+          tasksTotal: myYTasks.length,
+          tasksCompleted: myYTasks.filter((t) => t.completed).length,
+          deepWorkMinutes: myYDW.reduce((sum, s) => sum + s.duration_minutes, 0),
+          streakActive,
+        });
+      }
     }
-  }
-  if (!hasPartnerYesterdaySummary && yesterdayTasks && yesterdayDeepWork) {
-    const pYTasks = yesterdayTasks.filter((t) => t.user_id !== user.id);
-    const pYDW = yesterdayDeepWork.filter((s) => s.user_id !== user.id);
-    if (pYTasks.length > 0) {
-      partnerPoints += calculateDailyPoints({
-        tasksTotal: pYTasks.length,
-        tasksCompleted: pYTasks.filter((t) => t.completed).length,
-        deepWorkMinutes: pYDW.reduce((sum, s) => sum + s.duration_minutes, 0),
-        streakActive,
-      });
+    if (!hasPartnerYesterdaySummary && yesterdayTasks && yesterdayDeepWork) {
+      const pYTasks = yesterdayTasks.filter((t) => t.user_id !== user.id);
+      const pYDW = yesterdayDeepWork.filter((s) => s.user_id !== user.id);
+      if (pYTasks.length > 0) {
+        partnerPoints += calculateDailyPoints({
+          tasksTotal: pYTasks.length,
+          tasksCompleted: pYTasks.filter((t) => t.completed).length,
+          deepWorkMinutes: pYDW.reduce((sum, s) => sum + s.duration_minutes, 0),
+          streakActive,
+        });
+      }
     }
   }
 

@@ -35,6 +35,11 @@ export function formatMinutesToHours(minutes: number): string {
   return `${hrs}h ${mins}m`;
 }
 
+/** Check if a date string (YYYY-MM-DD) falls on a Sunday — weekly free day */
+export function isSunday(dateStr: string): boolean {
+  return new Date(dateStr + "T00:00:00").getDay() === 0;
+}
+
 export function getDayStart(date?: string): Date {
   if (date) return startOfDay(new Date(date + "T00:00:00"));
   return startOfDay(new Date());

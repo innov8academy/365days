@@ -6,7 +6,7 @@ import { MAX_MORNING_PASSES_PER_MONTH } from "@/lib/constants";
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
 import { LeaderboardSkeleton } from "@/components/shared/skeleton-page";
 import { calculateDailyPoints } from "@/lib/points";
-import { getToday, getYesterday } from "@/lib/dates";
+import { getToday, getYesterday, isSunday } from "@/lib/dates";
 import useSWR from "swr";
 import { createClient } from "@/lib/supabase/client";
 
@@ -39,9 +39,10 @@ export default function LeaderboardPage() {
   const streakActive = streak?.status === "active" && (streak?.current_count ?? 0) > 0;
 
   // Check if today is a break day (any approved break covering today → both users get 0)
-  const isTodayBreakDay = allBreaks?.some(
+  // Sunday is always a free day — no points, no streak impact
+  const isTodayBreakDay = isSunday(today) || (allBreaks?.some(
     (b) => b.approved && b.start_date <= today && b.end_date >= today
-  ) ?? false;
+  ) ?? false);
 
   // Calculate today's points live (only if tasks have been written — don't penalize for empty day)
   const myTasks = allTasks?.filter((t) => t.user_id === user.id) ?? [];
@@ -110,7 +111,8 @@ export default function LeaderboardPage() {
     const hasPartnerYesterday = pSummaries.some((s) => s.date === yesterday);
     const yesterdayInComp = yesterday >= competition.start_date && yesterday <= competition.end_date;
 
-    if (yesterdayInComp && yesterdayTasks && yesterdayDeepWork) {
+    // Skip gap fallback on Sundays (free day = 0 points)
+    if (yesterdayInComp && !isSunday(yesterday) && yesterdayTasks && yesterdayDeepWork) {
       if (!hasMyYesterday) {
         const myYTasks = yesterdayTasks.filter((t) => t.user_id === user.id);
         const myYDW = yesterdayDeepWork.filter((s) => s.user_id === user.id);
