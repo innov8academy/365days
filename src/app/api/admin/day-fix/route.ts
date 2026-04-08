@@ -193,6 +193,38 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, action: "adjust-points" });
       }
 
+      case "add-deep-work": {
+        const { userId, date, durationMinutes } = body;
+        if (!userId || !date || typeof durationMinutes !== "number" || durationMinutes < 1) {
+          return NextResponse.json(
+            { error: "Missing userId, date, or durationMinutes" },
+            { status: 400 }
+          );
+        }
+
+        const startedAt = body.startedAt ?? new Date().toISOString();
+        const endedAt = body.endedAt ?? new Date(
+          new Date(startedAt).getTime() + durationMinutes * 60 * 1000
+        ).toISOString();
+
+        const { error } = await supabase
+          .from("deep_work_sessions")
+          .insert({
+            user_id: userId,
+            date,
+            started_at: startedAt,
+            ended_at: endedAt,
+            duration_minutes: durationMinutes,
+            session_type: body.sessionType ?? "pomodoro",
+          });
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ success: true, action: "add-deep-work" });
+      }
+
       case "recalculate": {
         const { date } = body;
         if (!date) {

@@ -121,6 +121,44 @@ function TimerRing({
 }
 
 const TIMER_STORAGE_KEY = "365days-timer";
+const PENDING_SESSIONS_KEY = "365days-pending-sessions";
+
+interface PendingSession {
+  user_id: string;
+  date: string;
+  started_at: string;
+  ended_at: string;
+  duration_minutes: number;
+  session_type: string;
+}
+
+function loadPendingSessions(): PendingSession[] {
+  try {
+    const raw = localStorage.getItem(PENDING_SESSIONS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+function savePendingSessions(sessions: PendingSession[]) {
+  try {
+    localStorage.setItem(PENDING_SESSIONS_KEY, JSON.stringify(sessions));
+  } catch {
+    // ignore
+  }
+}
+
+function queuePendingSession(session: PendingSession) {
+  const pending = loadPendingSessions();
+  // Deduplicate by user_id + started_at
+  if (pending.some((s) => s.user_id === session.user_id && s.started_at === session.started_at)) {
+    return;
+  }
+  pending.push(session);
+  savePendingSessions(pending);
+}
 
 interface TimerSavedState {
   mode: TimerMode;
@@ -367,28 +405,41 @@ export function TimerView({
     lastSavedSessionKeyRef.current = sessionKey;
 
     const endTime = new Date();
+    const sessionData: PendingSession = {
+      user_id: userId,
+      date: today,
+      started_at: startTime.toISOString(),
+      ended_at: endTime.toISOString(),
+      duration_minutes: durationMinutes,
+      session_type: "pomodoro",
+    };
+
     try {
-      await supabase.from("deep_work_sessions").insert({
-        user_id: userId,
-        date: today,
-        started_at: startTime.toISOString(),
-        ended_at: endTime.toISOString(),
-        duration_minutes: durationMinutes,
-        session_type: "pomodoro",
-      });
+      const { error } = await supabase.from("deep_work_sessions").insert(sessionData);
 
+      if (error) {
+        queuePendingSession(sessionData);
+        if (lastSavedSessionKeyRef.current === sessionKey) {
+          lastSavedSessionKeyRef.current = null;
+        }
+        toast.error("Session saved offline — will sync when back online");
+      } else {
+        // Check and award achievements in real-time
+        checkAchievementsLive(supabase, userId, "deep_work", {
+          sessionDuration: durationMinutes,
+          sessionEndedAt: endTime.toISOString(),
+        }).catch(() => {});
+      }
+
+      // Always update local count so the UI reflects the work done
       setTodayMinutes((prev) => prev + durationMinutes);
-
-      // Check and award achievements in real-time
-      checkAchievementsLive(supabase, userId, "deep_work", {
-        sessionDuration: durationMinutes,
-        sessionEndedAt: endTime.toISOString(),
-      }).catch(() => {});
     } catch {
+      queuePendingSession(sessionData);
       if (lastSavedSessionKeyRef.current === sessionKey) {
         lastSavedSessionKeyRef.current = null;
       }
-      toast.error("Failed to save session");
+      toast.error("Session saved offline — will sync when back online");
+      setTodayMinutes((prev) => prev + durationMinutes);
     }
   }, [supabase, today, userId]);
 
@@ -409,6 +460,54 @@ export function TimerView({
       settingsRef.current.workMinutes,
     );
   }, [saveSessionWithDuration]);
+
+  // Flush any sessions that failed to save while offline
+  const flushPendingSessions = useCallback(async () => {
+    const pending = loadPendingSessions();
+    if (pending.length === 0) return;
+
+    const remaining: PendingSession[] = [];
+    for (const session of pending) {
+      // Dedup check: skip if already saved
+      const { data: existing } = await supabase
+        .from("deep_work_sessions")
+        .select("id")
+        .eq("user_id", session.user_id)
+        .eq("started_at", session.started_at)
+        .eq("session_type", session.session_type)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) continue;
+
+      const { error } = await supabase.from("deep_work_sessions").insert(session);
+      if (error) {
+        remaining.push(session);
+      } else {
+        checkAchievementsLive(supabase, session.user_id, "deep_work", {
+          sessionDuration: session.duration_minutes,
+          sessionEndedAt: session.ended_at,
+        }).catch(() => {});
+      }
+    }
+
+    savePendingSessions(remaining);
+    if (remaining.length === 0 && pending.length > 0) {
+      toast.success(`Synced ${pending.length} offline session${pending.length > 1 ? "s" : ""}`);
+    }
+  }, [supabase]);
+
+  // Flush pending sessions on mount and when coming back online
+  useEffect(() => {
+    void flushPendingSessions();
+
+    function handleOnline() {
+      void flushPendingSessions();
+    }
+
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [flushPendingSessions]);
 
   // Device lock: prevents multiple devices from running timers simultaneously
   // All lock operations are fail-safe — if the table doesn't exist yet or
