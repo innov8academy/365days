@@ -60,6 +60,8 @@ const DEFAULT_SETTINGS: TimerSettings = {
 
 const supabase = createClient();
 
+type SaveWorkResult = "saved" | "skipped" | "discarded" | "failed";
+
 function loadSettings(): TimerSettings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
@@ -226,24 +228,27 @@ export function TimerView({
   }, [userId]);
 
   const saveWorkSession = useCallback(
-    async (session: ActiveTimerSession, elapsedSeconds: number) => {
+    async (session: ActiveTimerSession, elapsedSeconds: number): Promise<SaveWorkResult> => {
       if (shouldDiscardActiveTimer(session, today)) {
-        await releaseActiveTimer();
-        resetToWork();
-        return 0;
+        return "discarded";
       }
 
       const creditedSeconds = Math.min(Math.max(0, elapsedSeconds), session.planned_seconds);
-      if (creditedSeconds < 60) return 0;
+      if (creditedSeconds < 60) return "skipped";
 
       const durationMinutes = Math.max(1, Math.round(creditedSeconds / 60));
-      const { data: existing } = await supabase
+      const { data: existing, error: existingError } = await supabase
         .from("deep_work_sessions")
         .select("id")
         .eq("user_id", userId)
         .eq("started_at", session.started_at)
         .eq("session_type", "pomodoro")
         .maybeSingle();
+
+      if (existingError) {
+        toast.error("Failed to check saved session");
+        return "failed";
+      }
 
       if (!existing) {
         const startedAtMs = new Date(session.started_at).getTime();
@@ -259,33 +264,65 @@ export function TimerView({
 
         if (error) {
           toast.error("Failed to save session");
-          return 0;
+          return "failed";
         }
       }
 
       if (session.session_date === today) {
         void mutate("today-deepwork");
       }
-      return durationMinutes;
+      return "saved";
     },
-    [mutate, releaseActiveTimer, resetToWork, today, userId],
+    [mutate, today, userId],
   );
 
   const completeWorkTimer = useCallback(
     async (session: ActiveTimerSession) => {
       if (isCompletingRef.current) return;
       isCompletingRef.current = true;
-      const elapsedSeconds = getActiveTimerElapsedSeconds(toSnapshot(session));
-      await saveWorkSession(session, Math.max(elapsedSeconds, session.planned_seconds));
-      await releaseActiveTimer();
+      try {
+        const elapsedSeconds = getActiveTimerElapsedSeconds(toSnapshot(session));
+        const saveResult = await saveWorkSession(
+          session,
+          Math.max(elapsedSeconds, session.planned_seconds),
+        );
 
-      const nextMode: TimerMode = "break";
-      const nextSeconds = settings.breakMinutes * 60;
-      applyState(nextMode, nextSeconds, false);
-      toast.success("Deep work saved");
-      isCompletingRef.current = false;
+        if (saveResult === "failed") {
+          const now = new Date().toISOString();
+          const { data } = await supabase
+            .from("active_timer_sessions")
+            .update({
+              status: "paused",
+              elapsed_seconds: session.planned_seconds,
+              last_started_at: null,
+              updated_at: now,
+            })
+            .eq("user_id", userId)
+            .select()
+            .single();
+
+          if (data) setActiveSession(data as ActiveTimerSession);
+          applyState("work", 0, false);
+          return;
+        }
+
+        await releaseActiveTimer();
+
+        if (saveResult === "discarded") {
+          resetToWork();
+          toast.info("Old timer cleared");
+          return;
+        }
+
+        const nextMode: TimerMode = "break";
+        const nextSeconds = settings.breakMinutes * 60;
+        applyState(nextMode, nextSeconds, false);
+        toast.success("Deep work saved");
+      } finally {
+        isCompletingRef.current = false;
+      }
     },
-    [applyState, releaseActiveTimer, saveWorkSession, settings.breakMinutes],
+    [applyState, releaseActiveTimer, resetToWork, saveWorkSession, settings.breakMinutes, userId],
   );
 
   const restoreActiveTimer = useCallback(async () => {
@@ -399,10 +436,60 @@ export function TimerView({
       return;
     }
 
+    const { data: existingActive, error: existingActiveError } = await supabase
+      .from("active_timer_sessions")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existingActiveError) {
+      toast.error("Failed to check active timer");
+      return;
+    }
+
+    const existingSession = existingActive as ActiveTimerSession | null;
+    if (existingSession) {
+      if (shouldDiscardActiveTimer(existingSession, today)) {
+        await supabase.from("active_timer_sessions").delete().eq("user_id", userId);
+      } else if (existingSession.status === "paused") {
+        const { data, error } = await supabase
+          .from("active_timer_sessions")
+          .update({
+            status: "running",
+            last_started_at: now,
+            updated_at: now,
+            device_id: getDeviceId(),
+          })
+          .eq("user_id", userId)
+          .select()
+          .single();
+
+        if (error) {
+          toast.error("Failed to resume timer");
+          return;
+        }
+
+        const session = data as ActiveTimerSession;
+        setActiveSession(session);
+        applyState("work", getActiveTimerRemainingSeconds(toSnapshot(session)), true);
+        return;
+      } else {
+        const remaining = getActiveTimerRemainingSeconds(toSnapshot(existingSession));
+        if (remaining <= 0) {
+          await completeWorkTimer(existingSession);
+          return;
+        }
+
+        setActiveSession(existingSession);
+        applyState("work", remaining, true);
+        return;
+      }
+    }
+
     const plannedSeconds = settings.workMinutes * 60;
     const { data, error } = await supabase
       .from("active_timer_sessions")
-      .upsert(
+      .insert(
         {
           user_id: userId,
           session_date: today,
@@ -414,13 +501,17 @@ export function TimerView({
           device_id: getDeviceId(),
           updated_at: now,
         },
-        { onConflict: "user_id" },
       )
       .select()
       .single();
 
     if (error) {
-      toast.error("Failed to start timer");
+      if (error.code === "23505") {
+        await restoreActiveTimer();
+        toast.error("Timer was already active. Restored latest state.");
+      } else {
+        toast.error("Failed to start timer");
+      }
       return;
     }
 
@@ -465,7 +556,8 @@ export function TimerView({
     }
 
     const elapsedSeconds = getActiveTimerElapsedSeconds(toSnapshot(session));
-    await saveWorkSession(session, elapsedSeconds);
+    const saveResult = await saveWorkSession(session, elapsedSeconds);
+    if (saveResult === "failed") return;
     await releaseActiveTimer();
     resetToWork();
   }
@@ -522,7 +614,8 @@ export function TimerView({
 
   function switchMode(nextMode: TimerMode) {
     if (mode === "work" && activeSession) {
-      void stopWorkTimer();
+      toast.info("Stop or reset the focus timer first");
+      return;
     }
 
     breakTargetRef.current = null;
@@ -576,7 +669,7 @@ export function TimerView({
                     variant="ghost"
                     size="sm"
                     onClick={() => switchMode(timerMode)}
-                    disabled={isRunning}
+                    disabled={isRunning || Boolean(activeSession)}
                     className={cn(
                       "rounded-md text-xs",
                       mode === timerMode
