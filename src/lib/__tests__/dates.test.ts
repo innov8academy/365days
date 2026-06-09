@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   getToday,
+  getYesterday,
   formatDate,
   formatTime,
   formatMinutesToHours,
   getDayStart,
+  isSunday,
 } from "../dates";
 
 describe("dates", () => {
@@ -14,13 +16,17 @@ describe("dates", () => {
       expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
 
-    it("returns today's date", () => {
-      const today = getToday();
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      expect(today).toBe(`${year}-${month}-${day}`);
+    it("returns today's IST date", () => {
+      expect(getToday(new Date("2026-06-08T20:00:00.000Z"))).toBe("2026-06-09");
+    });
+
+    it("handles the UTC boundary before and after IST midnight", () => {
+      expect(getToday(new Date("2026-01-01T18:29:59.000Z"))).toBe("2026-01-01");
+      expect(getToday(new Date("2026-01-01T18:30:00.000Z"))).toBe("2026-01-02");
+    });
+
+    it("returns yesterday in the IST calendar", () => {
+      expect(getYesterday(new Date("2026-06-08T20:00:00.000Z"))).toBe("2026-06-08");
     });
   });
 
@@ -149,25 +155,26 @@ describe("dates", () => {
 
   describe("getDayStart", () => {
     it("returns start of today when no argument", () => {
+      vi.setSystemTime(new Date("2025-06-15T12:00:00.000Z"));
       const dayStart = getDayStart();
-      expect(dayStart.getHours()).toBe(0);
-      expect(dayStart.getMinutes()).toBe(0);
-      expect(dayStart.getSeconds()).toBe(0);
-      expect(dayStart.getMilliseconds()).toBe(0);
+      expect(dayStart.toISOString()).toBe("2025-06-14T18:30:00.000Z");
     });
 
     it("returns start of a specific date", () => {
       const dayStart = getDayStart("2025-06-15");
-      expect(dayStart.getFullYear()).toBe(2025);
-      expect(dayStart.getMonth()).toBe(5); // 0-indexed
-      expect(dayStart.getDate()).toBe(15);
-      expect(dayStart.getHours()).toBe(0);
-      expect(dayStart.getMinutes()).toBe(0);
+      expect(dayStart.toISOString()).toBe("2025-06-14T18:30:00.000Z");
     });
 
     it("returns a Date object", () => {
       expect(getDayStart()).toBeInstanceOf(Date);
       expect(getDayStart("2025-01-01")).toBeInstanceOf(Date);
+    });
+  });
+
+  describe("isSunday", () => {
+    it("checks Sunday by the IST calendar date", () => {
+      expect(isSunday("2026-06-07")).toBe(true);
+      expect(isSunday("2026-06-08")).toBe(false);
     });
   });
 });

@@ -6,8 +6,7 @@ import {
   LayoutDashboard,
   ListTodo,
   Timer,
-  Flame,
-  Trophy,
+  Coffee,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,8 +14,7 @@ const navItems = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/timer", label: "Timer", icon: Timer },
-  { href: "/streak", label: "Streak", icon: Flame },
-  { href: "/leaderboard", label: "Board", icon: Trophy },
+  { href: "/breaks", label: "Breaks", icon: Coffee },
 ];
 
 export function BottomNav() {

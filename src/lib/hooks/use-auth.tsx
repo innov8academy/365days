@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import type { AppMember } from "@/types/database";
 
 interface Profile {
   id: string;
@@ -16,6 +17,7 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   partner: Profile | null;
+  membership: AppMember | null;
   loading: boolean;
 }
 
@@ -23,15 +25,18 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   partner: null,
+  membership: null,
   loading: true,
 });
+
+const supabase = createClient();
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [partner, setPartner] = useState<Profile | null>(null);
+  const [membership, setMembership] = useState<AppMember | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
 
   useEffect(() => {
     async function load() {
@@ -43,6 +48,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setUser(authUser);
+
+      const { data: member, error: memberError } = await supabase
+        .from("app_members")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .maybeSingle();
+
+      if (!memberError && member) {
+        setMembership(member as AppMember);
+        if (!member.active) {
+          setProfile(null);
+          setPartner(null);
+          setLoading(false);
+          return;
+        }
+      } else if (!memberError) {
+        setMembership(null);
+        setProfile(null);
+        setPartner(null);
+        setLoading(false);
+        return;
+      }
 
       const { data: profiles } = await supabase.from("profiles").select("*");
       if (profiles) {
@@ -60,14 +87,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!session?.user) {
         setProfile(null);
         setPartner(null);
+        setMembership(null);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase]);
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, partner, loading }}>
+    <AuthContext.Provider value={{ user, profile, partner, membership, loading }}>
       {children}
     </AuthContext.Provider>
   );

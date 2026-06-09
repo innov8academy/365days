@@ -42,6 +42,8 @@ export interface DailySummary {
   points_earned: number;
   deep_work_minutes: number;
   streak_maintained: boolean;
+  target_minutes: number;
+  is_break_day: boolean;
 }
 
 export interface Streak {
@@ -92,9 +94,21 @@ export interface MorningPass {
   created_at: string;
 }
 
+export interface AppMember {
+  user_id: string;
+  role: "owner" | "member";
+  active: boolean;
+  created_at: string;
+}
+
 export interface ActiveTimerSession {
   id: string;
   user_id: string;
+  session_date: string;
+  status: "running" | "paused";
+  planned_seconds: number;
+  elapsed_seconds: number;
+  last_started_at: string | null;
   started_at: string;
   device_id: string;
   updated_at: string;

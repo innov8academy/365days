@@ -7,7 +7,14 @@ import {
   DEEP_WORK_DAILY_TARGET,
 } from "../constants";
 import { formatTime, formatMinutesToHours } from "../dates";
-import { getRemainingSeconds, getTargetEndTime, resolveSavedSecondsLeft } from "../timer";
+import {
+  getActiveTimerElapsedSeconds,
+  getActiveTimerRemainingSeconds,
+  getRemainingSeconds,
+  getTargetEndTime,
+  resolveSavedSecondsLeft,
+  shouldDiscardActiveTimer,
+} from "../timer";
 
 /**
  * Tests for pomodoro timer business logic:
@@ -123,20 +130,20 @@ describe("pomodoro timer", () => {
       expect(calculateDeepWorkFromSessions(0)).toBe(0);
     });
 
-    it("need ~8 sessions for 3h daily target (180 min)", () => {
+    it("need 10 sessions for the 4h daily target", () => {
       const needed = sessionsNeededForTarget(DEEP_WORK_DAILY_TARGET);
-      expect(needed).toBe(8);
+      expect(needed).toBe(10);
     });
 
-    it("8 sessions gives 200 minutes, above 3h target", () => {
-      const minutes = calculateDeepWorkFromSessions(8);
-      expect(minutes).toBe(200);
+    it("10 sessions gives 250 minutes, above the 4h target", () => {
+      const minutes = calculateDeepWorkFromSessions(10);
+      expect(minutes).toBe(250);
       expect(minutes).toBeGreaterThan(DEEP_WORK_DAILY_TARGET);
     });
 
-    it("7 sessions gives 175 minutes, below 3h target", () => {
-      const minutes = calculateDeepWorkFromSessions(7);
-      expect(minutes).toBe(175);
+    it("9 sessions gives 225 minutes, below the 4h target", () => {
+      const minutes = calculateDeepWorkFromSessions(9);
+      expect(minutes).toBe(225);
       expect(minutes).toBeLessThan(DEEP_WORK_DAILY_TARGET);
     });
   });
@@ -189,6 +196,46 @@ describe("pomodoro timer", () => {
     });
   });
 
+  describe("server active timer recovery", () => {
+    it("recomputes remaining time from stored elapsed and last_started_at", () => {
+      const startedAt = "2026-06-09T03:00:00.000Z";
+      const now = new Date("2026-06-09T03:10:00.000Z").getTime();
+      const session = {
+        session_date: "2026-06-09",
+        status: "running" as const,
+        planned_seconds: 1500,
+        elapsed_seconds: 300,
+        last_started_at: startedAt,
+      };
+
+      expect(getActiveTimerElapsedSeconds(session, now)).toBe(900);
+      expect(getActiveTimerRemainingSeconds(session, now)).toBe(600);
+    });
+
+    it("pause/resume elapsed time excludes paused time", () => {
+      const now = new Date("2026-06-09T03:30:00.000Z").getTime();
+      const pausedSession = {
+        session_date: "2026-06-09",
+        status: "paused" as const,
+        planned_seconds: 1500,
+        elapsed_seconds: 600,
+        last_started_at: null,
+      };
+
+      expect(getActiveTimerElapsedSeconds(pausedSession, now)).toBe(600);
+      expect(getActiveTimerRemainingSeconds(pausedSession, now)).toBe(900);
+    });
+
+    it("discards restored timers from a previous IST date", () => {
+      expect(
+        shouldDiscardActiveTimer({ session_date: "2026-06-08" }, "2026-06-09"),
+      ).toBe(true);
+      expect(
+        shouldDiscardActiveTimer({ session_date: "2026-06-09" }, "2026-06-09"),
+      ).toBe(false);
+    });
+  });
+
   describe("timer display formatting", () => {
     it("displays 25:00 at start of work session", () => {
       expect(formatTime(25 * 60)).toBe("25:00");
@@ -228,8 +275,8 @@ describe("pomodoro timer", () => {
       expect(formatMinutesToHours(60)).toBe("1h");
     });
 
-    it("formats progress at target (3h)", () => {
-      expect(formatMinutesToHours(DEEP_WORK_DAILY_TARGET)).toBe("3h");
+    it("formats progress at target (4h)", () => {
+      expect(formatMinutesToHours(DEEP_WORK_DAILY_TARGET)).toBe("4h");
     });
 
     it("formats progress with mixed hours and minutes", () => {

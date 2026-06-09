@@ -1,44 +1,37 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSWRConfig } from "swr";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
-  Play,
-  Pause,
-  Square,
-  RotateCcw,
-  Timer,
-  Coffee,
   CheckCircle2,
-  Settings2,
+  Coffee,
   Minus,
+  Pause,
+  Play,
   Plus,
+  RotateCcw,
+  Settings2,
+  Square,
+  Timer,
 } from "lucide-react";
-import { formatTime, formatMinutesToHours } from "@/lib/dates";
-import {
-  POMODORO_WORK_MINUTES,
-  POMODORO_BREAK_MINUTES,
-  POMODORO_LONG_BREAK_MINUTES,
-  POMODORO_SESSIONS_BEFORE_LONG_BREAK,
-  DEEP_WORK_DAILY_TARGET,
-} from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import confetti from "canvas-confetti";
-import type { DeepWorkSession } from "@/types/database";
+import { DEEP_WORK_DAILY_TARGET, POMODORO_BREAK_MINUTES, POMODORO_LONG_BREAK_MINUTES, POMODORO_WORK_MINUTES } from "@/lib/constants";
+import { formatMinutesToHours, formatTime } from "@/lib/dates";
 import {
-  getRemainingSeconds,
-  getTargetEndTime,
-  resolveSavedSecondsLeft,
+  getActiveTimerElapsedSeconds,
+  getActiveTimerRemainingSeconds,
+  shouldDiscardActiveTimer,
+  type ActiveTimerSnapshot,
 } from "@/lib/timer";
-import { checkAchievementsLive } from "@/lib/check-achievements-live";
+import type { ActiveTimerSession, DeepWorkSession } from "@/types/database";
 
 type TimerMode = "work" | "break" | "longBreak";
-type TimerCompletionSource = "active" | "background" | "restore";
 
 interface TimerViewProps {
   userId: string;
@@ -49,6 +42,61 @@ interface TimerViewProps {
   today: string;
   onTimerUpdate?: (state: { mode: TimerMode; secondsLeft: number; isRunning: boolean }) => void;
   partnerTimer?: { mode: string; secondsLeft: number; isRunning: boolean } | null;
+}
+
+interface TimerSettings {
+  workMinutes: number;
+  breakMinutes: number;
+  longBreakMinutes: number;
+}
+
+const SETTINGS_STORAGE_KEY = "365days-timer-settings";
+const DEVICE_ID_KEY = "365days-device-id";
+const DEFAULT_SETTINGS: TimerSettings = {
+  workMinutes: POMODORO_WORK_MINUTES,
+  breakMinutes: POMODORO_BREAK_MINUTES,
+  longBreakMinutes: POMODORO_LONG_BREAK_MINUTES,
+};
+
+const supabase = createClient();
+
+function loadSettings(): TimerSettings {
+  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+function saveSettings(settings: TimerSettings) {
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // UI preferences are optional.
+  }
+}
+
+function getDeviceId(): string {
+  if (typeof window === "undefined") return "server";
+  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+  }
+  return deviceId;
+}
+
+function toSnapshot(session: ActiveTimerSession): ActiveTimerSnapshot {
+  return {
+    session_date: session.session_date,
+    status: session.status,
+    planned_seconds: session.planned_seconds,
+    elapsed_seconds: session.elapsed_seconds,
+    last_started_at: session.last_started_at,
+  };
 }
 
 function TimerRing({
@@ -62,30 +110,19 @@ function TimerRing({
   mode: TimerMode;
   isRunning: boolean;
 }) {
-  const size = 280;
-  const strokeWidth = 4;
+  const size = 264;
+  const strokeWidth = 5;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const progress = (totalSeconds - secondsLeft) / totalSeconds;
-  const dashOffset = circumference * (1 - progress);
-
-  const strokeColor =
-    mode === "work"
-      ? "stroke-[var(--flame)]"
-      : "stroke-emerald-400";
+  const progress = totalSeconds > 0 ? (totalSeconds - secondsLeft) / totalSeconds : 0;
+  const dashOffset = circumference * (1 - Math.min(Math.max(progress, 0), 1));
 
   return (
     <div className="relative inline-flex items-center justify-center">
-      {isRunning && mode === "work" && (
-        <div className="absolute inset-8 rounded-full bg-flame/[0.06] blur-2xl" />
-      )}
       <svg
         width={size}
         height={size}
-        className={cn(
-          "-rotate-90",
-          isRunning && mode === "work" && "animate-timer-ring-pulse"
-        )}
+        className={cn("-rotate-90", isRunning && mode === "work" && "animate-timer-ring-pulse")}
       >
         <circle
           cx={size / 2}
@@ -103,210 +140,22 @@ function TimerRing({
           fill="none"
           strokeWidth={strokeWidth}
           strokeLinecap="round"
-          className={cn("timer-ring-circle", strokeColor)}
+          className={mode === "work" ? "stroke-[var(--flame)]" : "stroke-emerald-400"}
           strokeDasharray={circumference}
           strokeDashoffset={dashOffset}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className="text-5xl lg:text-7xl font-mono font-bold tracking-wider">
+        <div className="font-mono text-5xl font-bold tracking-wider lg:text-6xl">
           {formatTime(secondsLeft)}
         </div>
-        <div className="text-xs text-muted-foreground/60 mt-1 capitalize font-medium tracking-wider">
-          {mode === "longBreak" ? "Long Break" : mode}
+        <div className="mt-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {mode === "longBreak" ? "Long break" : mode === "break" ? "Break" : "Focus"}
         </div>
       </div>
     </div>
   );
 }
-
-const TIMER_STORAGE_KEY = "365days-timer";
-const PENDING_SESSIONS_KEY = "365days-pending-sessions";
-
-interface PendingSession {
-  user_id: string;
-  date: string;
-  started_at: string;
-  ended_at: string;
-  duration_minutes: number;
-  session_type: string;
-}
-
-function loadPendingSessions(): PendingSession[] {
-  try {
-    const raw = localStorage.getItem(PENDING_SESSIONS_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-function savePendingSessions(sessions: PendingSession[]) {
-  try {
-    localStorage.setItem(PENDING_SESSIONS_KEY, JSON.stringify(sessions));
-  } catch {
-    // ignore
-  }
-}
-
-function queuePendingSession(session: PendingSession) {
-  const pending = loadPendingSessions();
-  // Deduplicate by user_id + started_at
-  if (pending.some((s) => s.user_id === session.user_id && s.started_at === session.started_at)) {
-    return;
-  }
-  pending.push(session);
-  savePendingSessions(pending);
-}
-
-interface TimerSavedState {
-  mode: TimerMode;
-  secondsLeft: number;
-  isRunning: boolean;
-  sessionsCompleted: number;
-  sessionStartTime: string | null;
-  targetEndTime?: number | null;
-  lastCompletedSessionKey?: string | null;
-  savedAt: number;
-}
-function saveTimerState(state: TimerSavedState) {
-  try {
-    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // ignore
-  }
-}
-
-function loadTimerState(): TimerSavedState | null {
-  try {
-    const raw = localStorage.getItem(TIMER_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-const SETTINGS_STORAGE_KEY = "365days-timer-settings";
-
-interface TimerSettings {
-  workMinutes: number;
-  breakMinutes: number;
-  longBreakMinutes: number;
-}
-
-const DEFAULT_SETTINGS: TimerSettings = {
-  workMinutes: POMODORO_WORK_MINUTES,
-  breakMinutes: POMODORO_BREAK_MINUTES,
-  longBreakMinutes: POMODORO_LONG_BREAK_MINUTES,
-};
-
-function saveSettings(settings: TimerSettings) {
-  try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // ignore
-  }
-}
-
-function loadSettings(): TimerSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-}
-
-interface WindowWithWebkitAudioContext extends Window {
-  webkitAudioContext?: typeof AudioContext;
-}
-
-function ensureAudioContext(audioContextRef: { current: AudioContext | null }): AudioContext | null {
-  try {
-    if (typeof window === "undefined") return null;
-
-    const AudioContextCtor =
-      window.AudioContext ?? (window as WindowWithWebkitAudioContext).webkitAudioContext;
-
-    if (!AudioContextCtor) return null;
-
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContextCtor();
-    }
-
-    return audioContextRef.current;
-  } catch {
-    return null;
-  }
-}
-
-function primeAudioContext(audioContextRef: { current: AudioContext | null }) {
-  const ctx = ensureAudioContext(audioContextRef);
-  if (!ctx || ctx.state !== "suspended") return;
-
-  void ctx.resume().catch(() => {
-    // Some browsers require another user gesture; the timer still completes visually.
-  });
-}
-
-function playCompletionBeep(audioContextRef: { current: AudioContext | null }) {
-  const ctx = ensureAudioContext(audioContextRef);
-  if (!ctx) return;
-
-  if (ctx.state === "suspended") {
-    void ctx.resume().catch(() => {
-      // Keep the visual completion flow even if the browser blocks audio resume.
-    });
-  }
-
-  const start = ctx.currentTime + 0.02;
-  const notes = [784, 988, 1175];
-
-  notes.forEach((frequency, index) => {
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const noteStart = start + index * 0.22;
-    const noteEnd = noteStart + 0.18;
-
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
-    oscillator.frequency.value = frequency;
-    oscillator.type = "sine";
-    gain.gain.setValueAtTime(0.0001, noteStart);
-    gain.gain.exponentialRampToValueAtTime(0.24, noteStart + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
-    oscillator.start(noteStart);
-    oscillator.stop(noteEnd);
-  });
-}
-
-function showBrowserNotification(title: string, body: string) {
-  if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-    new Notification(title, { body, icon: "/favicon.ico" });
-  }
-}
-
-function requestNotificationPermission() {
-  if (typeof Notification !== "undefined" && Notification.permission === "default") {
-    Notification.requestPermission();
-  }
-}
-
-function getDeviceId(): string {
-  const key = "365days-device-id";
-  let id = sessionStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    sessionStorage.setItem(key, id);
-  }
-  return id;
-}
-
-const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
-const STALE_THRESHOLD = 60_000; // 60 seconds — consider session stale after this
 
 export function TimerView({
   userId,
@@ -318,1045 +167,595 @@ export function TimerView({
   onTimerUpdate,
   partnerTimer,
 }: TimerViewProps) {
-  const initialSettings = loadSettings();
-
-  const [initialized, setInitialized] = useState(false);
+  const { mutate } = useSWRConfig();
+  const [settings, setSettings] = useState<TimerSettings>(() => loadSettings());
   const [mode, setMode] = useState<TimerMode>("work");
-  const [secondsLeft, setSecondsLeft] = useState(initialSettings.workMinutes * 60);
+  const [secondsLeft, setSecondsLeft] = useState(() => settings.workMinutes * 60);
   const [isRunning, setIsRunning] = useState(false);
-  const [sessionsCompleted, setSessionsCompleted] = useState(0);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const [todayMinutes, setTodayMinutes] = useState(
-    myDeepWork.reduce((sum, session) => sum + session.duration_minutes, 0)
-  );
+  const [activeSession, setActiveSession] = useState<ActiveTimerSession | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState<TimerSettings>(initialSettings);
-
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const secondsLeftRef = useRef(secondsLeft);
-  const modeRef = useRef(mode);
-  const sessionsCompletedRef = useRef(sessionsCompleted);
-  const sessionStartTimeRef = useRef(sessionStartTime);
-  const isRunningRef = useRef(isRunning);
-  const targetEndTimeRef = useRef<number | null>(null);
-  const settingsRef = useRef(settings);
-  const hitTargetRef = useRef(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const lastSavedSessionKeyRef = useRef<string | null>(null);
-  const finishTimerRef = useRef<typeof finishTimer>(null!);
-  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
-  const supabase = createClient();
+  const breakTargetRef = useRef<number | null>(null);
+  const activeSessionRef = useRef<ActiveTimerSession | null>(null);
+  const isCompletingRef = useRef(false);
 
   useEffect(() => {
-    secondsLeftRef.current = secondsLeft;
-  }, [secondsLeft]);
+    activeSessionRef.current = activeSession;
+  }, [activeSession]);
 
-  useEffect(() => {
-    modeRef.current = mode;
-  }, [mode]);
-
-  useEffect(() => {
-    sessionsCompletedRef.current = sessionsCompleted;
-  }, [sessionsCompleted]);
-
-  useEffect(() => {
-    sessionStartTimeRef.current = sessionStartTime;
-  }, [sessionStartTime]);
-
-  useEffect(() => {
-    isRunningRef.current = isRunning;
-  }, [isRunning]);
-
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
-
-  const saveSessionWithDuration = useCallback(async (
-    startTime: Date,
-    elapsedSeconds: number,
-    maxMinutes?: number,
-  ) => {
-    const sessionKey = `${userId}:${startTime.toISOString()}`;
-    if (lastSavedSessionKeyRef.current === sessionKey) return;
-
-    const { data: existingSession } = await supabase
-      .from("deep_work_sessions")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("date", today)
-      .eq("started_at", startTime.toISOString())
-      .eq("session_type", "pomodoro")
-      .limit(1)
-      .maybeSingle();
-
-    if (existingSession) {
-      lastSavedSessionKeyRef.current = sessionKey;
-      return;
+  const totalSeconds = useMemo(() => {
+    if (mode === "work") {
+      return activeSession?.planned_seconds ?? settings.workMinutes * 60;
     }
+    if (mode === "longBreak") return settings.longBreakMinutes * 60;
+    return settings.breakMinutes * 60;
+  }, [activeSession?.planned_seconds, mode, settings]);
 
-    const cap = maxMinutes ?? settingsRef.current.workMinutes;
-    const durationMinutes = Math.min(
-      Math.max(1, Math.round(elapsedSeconds / 60)),
-      cap,
-    );
-
-    if (durationMinutes < 1) return;
-
-    lastSavedSessionKeyRef.current = sessionKey;
-
-    const endTime = new Date();
-    const sessionData: PendingSession = {
-      user_id: userId,
-      date: today,
-      started_at: startTime.toISOString(),
-      ended_at: endTime.toISOString(),
-      duration_minutes: durationMinutes,
-      session_type: "pomodoro",
-    };
-
-    try {
-      const { error } = await supabase.from("deep_work_sessions").insert(sessionData);
-
-      if (error) {
-        queuePendingSession(sessionData);
-        if (lastSavedSessionKeyRef.current === sessionKey) {
-          lastSavedSessionKeyRef.current = null;
-        }
-        toast.error("Session saved offline — will sync when back online");
-      } else {
-        // Check and award achievements in real-time
-        checkAchievementsLive(supabase, userId, "deep_work", {
-          sessionDuration: durationMinutes,
-          sessionEndedAt: endTime.toISOString(),
-        }).catch(() => {});
-      }
-
-      // Always update local count so the UI reflects the work done
-      setTodayMinutes((prev) => prev + durationMinutes);
-    } catch {
-      queuePendingSession(sessionData);
-      if (lastSavedSessionKeyRef.current === sessionKey) {
-        lastSavedSessionKeyRef.current = null;
-      }
-      toast.error("Session saved offline — will sync when back online");
-      setTodayMinutes((prev) => prev + durationMinutes);
-    }
-  }, [supabase, today, userId]);
-
-  const saveSession = useCallback(async () => {
-    if (!sessionStartTimeRef.current || modeRef.current !== "work") return;
-
-    // Use the timer countdown (total − remaining) so that paused time is
-    // excluded.  secondsLeftRef freezes on pause and counts down via
-    // wall-clock targetEndTime while running, so this is always accurate.
-    const totalSeconds = settingsRef.current.workMinutes * 60;
-    const elapsedSeconds = Math.max(0, totalSeconds - secondsLeftRef.current);
-
-    if (elapsedSeconds < 60) return;
-
-    await saveSessionWithDuration(
-      sessionStartTimeRef.current,
-      elapsedSeconds,
-      settingsRef.current.workMinutes,
-    );
-  }, [saveSessionWithDuration]);
-
-  // Flush any sessions that failed to save while offline
-  const flushPendingSessions = useCallback(async () => {
-    const pending = loadPendingSessions();
-    if (pending.length === 0) return;
-
-    const remaining: PendingSession[] = [];
-    for (const session of pending) {
-      // Dedup check: skip if already saved
-      const { data: existing } = await supabase
-        .from("deep_work_sessions")
-        .select("id")
-        .eq("user_id", session.user_id)
-        .eq("started_at", session.started_at)
-        .eq("session_type", session.session_type)
-        .limit(1)
-        .maybeSingle();
-
-      if (existing) continue;
-
-      const { error } = await supabase.from("deep_work_sessions").insert(session);
-      if (error) {
-        remaining.push(session);
-      } else {
-        checkAchievementsLive(supabase, session.user_id, "deep_work", {
-          sessionDuration: session.duration_minutes,
-          sessionEndedAt: session.ended_at,
-        }).catch(() => {});
-      }
-    }
-
-    savePendingSessions(remaining);
-    if (remaining.length === 0 && pending.length > 0) {
-      toast.success(`Synced ${pending.length} offline session${pending.length > 1 ? "s" : ""}`);
-    }
-  }, [supabase]);
-
-  // Flush pending sessions on mount and when coming back online
-  useEffect(() => {
-    void flushPendingSessions();
-
-    function handleOnline() {
-      void flushPendingSessions();
-    }
-
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, [flushPendingSessions]);
-
-  // Device lock: prevents multiple devices from running timers simultaneously
-  // All lock operations are fail-safe — if the table doesn't exist yet or
-  // network fails, the timer still works (just without cross-device protection).
-  const acquireTimerLock = useCallback(async (): Promise<boolean> => {
-    try {
-      const deviceId = getDeviceId();
-
-      // Check for existing active session
-      const { data: existing } = await supabase
-        .from("active_timer_sessions")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (existing && existing.device_id !== deviceId) {
-        const age = Date.now() - new Date(existing.updated_at).getTime();
-        if (age < STALE_THRESHOLD) {
-          toast.error("Timer is already running on another device");
-          return false;
-        }
-        // Stale session — overwrite it
-      }
-
-      await supabase
-        .from("active_timer_sessions")
-        .upsert({
-          user_id: userId,
-          device_id: deviceId,
-          started_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "user_id" });
-    } catch {
-      // Table may not exist yet — proceed without lock
-    }
-
-    return true;
-  }, [supabase, userId]);
-
-  const releaseTimerLock = useCallback(async () => {
-    if (heartbeatRef.current) {
-      clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
-    }
-    try {
-      await supabase
-        .from("active_timer_sessions")
-        .delete()
-        .eq("user_id", userId);
-    } catch {
-      // Table may not exist yet — ignore
-    }
-  }, [supabase, userId]);
-
-  const startHeartbeat = useCallback(() => {
-    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-    heartbeatRef.current = setInterval(async () => {
-      try {
-        await supabase
-          .from("active_timer_sessions")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("user_id", userId);
-      } catch {
-        // Table may not exist yet — ignore
-      }
-    }, HEARTBEAT_INTERVAL);
-  }, [supabase, userId]);
-
-  // Cleanup heartbeat on unmount
-  useEffect(() => {
-    return () => {
-      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-    };
-  }, []);
+  const todayMinutes = myDeepWork.reduce((sum, session) => sum + session.duration_minutes, 0);
+  const partnerMinutes = partnerDeepWork.reduce((sum, session) => sum + session.duration_minutes, 0);
+  const myProgress = Math.min((todayMinutes / DEEP_WORK_DAILY_TARGET) * 100, 100);
+  const partnerProgress = Math.min((partnerMinutes / DEEP_WORK_DAILY_TARGET) * 100, 100);
+  const isPartnerFocusing = partnerTimer?.isRunning && partnerTimer.mode === "work";
 
   const broadcastState = useCallback(
-    (nextSeconds: number, running: boolean, nextMode: TimerMode) => {
+    (nextMode: TimerMode, nextSeconds: number, running: boolean) => {
       onTimerUpdate?.({ mode: nextMode, secondsLeft: nextSeconds, isRunning: running });
     },
-    [onTimerUpdate]
+    [onTimerUpdate],
   );
 
-  const applyTimerState = useCallback(
+  const applyState = useCallback(
     (nextMode: TimerMode, nextSeconds: number, running: boolean) => {
-      modeRef.current = nextMode;
-      secondsLeftRef.current = nextSeconds;
-      isRunningRef.current = running;
-      targetEndTimeRef.current = running ? getTargetEndTime(nextSeconds) : null;
       setMode(nextMode);
       setSecondsLeft(nextSeconds);
       setIsRunning(running);
-      broadcastState(nextSeconds, running, nextMode);
+      broadcastState(nextMode, nextSeconds, running);
     },
-    [broadcastState]
+    [broadcastState],
   );
 
-  const finishTimer = useCallback(
-    (
-      source: TimerCompletionSource,
-      overrides?: {
-        mode?: TimerMode;
-        sessionStartTime?: Date | null;
-        sessionsCompleted?: number;
-      },
-    ) => {
-      const completedMode = overrides?.mode ?? modeRef.current;
-      const completedSessionStartTime = overrides?.sessionStartTime ?? sessionStartTimeRef.current;
-      const completedSessions = overrides?.sessionsCompleted ?? sessionsCompletedRef.current;
-      const currentSettings = settingsRef.current;
+  const resetToWork = useCallback(() => {
+    breakTargetRef.current = null;
+    setActiveSession(null);
+    applyState("work", settings.workMinutes * 60, false);
+  }, [applyState, settings.workMinutes]);
 
-      targetEndTimeRef.current = null;
-      isRunningRef.current = false;
-      setIsRunning(false);
-      setSessionStartTime(null);
-      sessionStartTimeRef.current = null;
+  const releaseActiveTimer = useCallback(async () => {
+    await supabase.from("active_timer_sessions").delete().eq("user_id", userId);
+    setActiveSession(null);
+    activeSessionRef.current = null;
+  }, [userId]);
 
-      if (completedMode === "work") {
-        const newCount = completedSessions + 1;
-        const nextMode =
-          newCount % POMODORO_SESSIONS_BEFORE_LONG_BREAK === 0 ? "longBreak" : "break";
-        const nextSeconds =
-          nextMode === "longBreak"
-            ? currentSettings.longBreakMinutes * 60
-            : currentSettings.breakMinutes * 60;
+  const saveWorkSession = useCallback(
+    async (session: ActiveTimerSession, elapsedSeconds: number) => {
+      if (shouldDiscardActiveTimer(session, today)) {
+        await releaseActiveTimer();
+        resetToWork();
+        return 0;
+      }
 
-        const completedSessionKey = completedSessionStartTime
-          ? `${userId}:${completedSessionStartTime.toISOString()}`
-          : lastSavedSessionKeyRef.current;
+      const creditedSeconds = Math.min(Math.max(0, elapsedSeconds), session.planned_seconds);
+      if (creditedSeconds < 60) return 0;
 
-        saveTimerState({
-          mode: nextMode,
-          secondsLeft: nextSeconds,
-          isRunning: false,
-          sessionsCompleted: newCount,
-          sessionStartTime: null,
-          targetEndTime: null,
-          lastCompletedSessionKey: completedSessionKey,
-          savedAt: Date.now(),
+      const durationMinutes = Math.max(1, Math.round(creditedSeconds / 60));
+      const { data: existing } = await supabase
+        .from("deep_work_sessions")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("started_at", session.started_at)
+        .eq("session_type", "pomodoro")
+        .maybeSingle();
+
+      if (!existing) {
+        const startedAtMs = new Date(session.started_at).getTime();
+        const endedAt = new Date(startedAtMs + creditedSeconds * 1000).toISOString();
+        const { error } = await supabase.from("deep_work_sessions").insert({
+          user_id: userId,
+          date: session.session_date,
+          started_at: session.started_at,
+          ended_at: endedAt,
+          duration_minutes: durationMinutes,
+          session_type: "pomodoro",
         });
 
-        if (completedSessionStartTime) {
-          // Cap elapsed time to actual wall-clock time to prevent inflated
-          // durations when the timer restores from a stale saved state
-          // (e.g. mobile PWA killed & reopened with old targetEndTime).
-          const wallClockSeconds = Math.floor(
-            (Date.now() - completedSessionStartTime.getTime()) / 1000
-          );
-          const elapsedSeconds = Math.min(
-            currentSettings.workMinutes * 60,
-            Math.max(0, wallClockSeconds),
-          );
-          void saveSessionWithDuration(
-            completedSessionStartTime,
-            elapsedSeconds,
-            currentSettings.workMinutes,
-          );
+        if (error) {
+          toast.error("Failed to save session");
+          return 0;
         }
-
-        // Release device lock after work session completes
-        void releaseTimerLock();
-
-        sessionsCompletedRef.current = newCount;
-        setSessionsCompleted(newCount);
-
-        toast.success(
-          source === "restore"
-            ? "Your pomodoro completed while you were away!"
-            : "Pomodoro complete! Take a break.",
-        );
-        playCompletionBeep(audioContextRef);
-        showBrowserNotification("Pomodoro Complete!", "Time for a break.");
-        applyTimerState(nextMode, nextSeconds, false);
-        return;
       }
 
-      saveTimerState({
-        mode: "work",
-        secondsLeft: currentSettings.workMinutes * 60,
-        isRunning: false,
-        sessionsCompleted: completedSessions,
-        sessionStartTime: null,
-        targetEndTime: null,
-        lastCompletedSessionKey: lastSavedSessionKeyRef.current,
-        savedAt: Date.now(),
-      });
-
-      toast.success("Break over! Ready to focus?");
-      playCompletionBeep(audioContextRef);
-      showBrowserNotification("Break Over!", "Ready to focus?");
-      applyTimerState("work", currentSettings.workMinutes * 60, false);
+      if (session.session_date === today) {
+        void mutate("today-deepwork");
+      }
+      return durationMinutes;
     },
-    [applyTimerState, saveSessionWithDuration, releaseTimerLock, userId]
+    [mutate, releaseActiveTimer, resetToWork, today, userId],
   );
-  finishTimerRef.current = finishTimer;
 
-  const syncRunningTimer = useCallback(
-    (source: TimerCompletionSource) => {
-      if (!isRunningRef.current || targetEndTimeRef.current === null) return;
+  const completeWorkTimer = useCallback(
+    async (session: ActiveTimerSession) => {
+      if (isCompletingRef.current) return;
+      isCompletingRef.current = true;
+      const elapsedSeconds = getActiveTimerElapsedSeconds(toSnapshot(session));
+      await saveWorkSession(session, Math.max(elapsedSeconds, session.planned_seconds));
+      await releaseActiveTimer();
 
-      const remaining = getRemainingSeconds(targetEndTimeRef.current);
-      if (remaining <= 0) {
-        finishTimer(source);
-        return;
-      }
-
-      if (remaining === secondsLeftRef.current) return;
-
-      secondsLeftRef.current = remaining;
-      setSecondsLeft(remaining);
-
-      if (remaining <= 5 || remaining % 15 === 0) {
-        broadcastState(remaining, true, modeRef.current);
-      }
+      const nextMode: TimerMode = "break";
+      const nextSeconds = settings.breakMinutes * 60;
+      applyState(nextMode, nextSeconds, false);
+      toast.success("Deep work saved");
+      isCompletingRef.current = false;
     },
-    [broadcastState, finishTimer]
+    [applyState, releaseActiveTimer, saveWorkSession, settings.breakMinutes],
   );
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    const saved = loadTimerState();
-    if (saved) {
-      const restoredStartTime = saved.sessionStartTime ? new Date(saved.sessionStartTime) : null;
-      lastSavedSessionKeyRef.current = saved.lastCompletedSessionKey ?? null;
-      modeRef.current = saved.mode;
+  const restoreActiveTimer = useCallback(async () => {
+    const { data } = await supabase
+      .from("active_timer_sessions")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-      // Reset sessions count if saved state is from a different day
-      const savedDate = new Date(saved.savedAt);
-      const savedDateStr = `${savedDate.getFullYear()}-${String(savedDate.getMonth() + 1).padStart(2, "0")}-${String(savedDate.getDate()).padStart(2, "0")}`;
-      const isFromToday = savedDateStr === today;
-      const restoredSessions = isFromToday ? saved.sessionsCompleted : 0;
-      sessionsCompletedRef.current = restoredSessions;
-      sessionStartTimeRef.current = restoredStartTime;
-      secondsLeftRef.current = saved.secondsLeft;
-
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMode(saved.mode);
-      setSessionsCompleted(restoredSessions);
-      setSessionStartTime(restoredStartTime);
-
-      if (saved.isRunning) {
-        const remaining = resolveSavedSecondsLeft(saved);
-
-        if (remaining > 0) {
-          secondsLeftRef.current = remaining;
-          targetEndTimeRef.current =
-            typeof saved.targetEndTime === "number"
-              ? saved.targetEndTime
-              : getTargetEndTime(remaining);
-          isRunningRef.current = true;
-          setSecondsLeft(remaining);
-          setIsRunning(true);
-
-          // Re-acquire device lock and restart heartbeat on restore
-          if (saved.mode === "work") {
-            void acquireTimerLock().then((acquired) => {
-              if (acquired) startHeartbeat();
-            });
-          }
-        } else {
-          secondsLeftRef.current = 0;
-          setSecondsLeft(0);
-          finishTimerRef.current("restore", {
-            mode: saved.mode,
-            sessionStartTime: restoredStartTime,
-            sessionsCompleted: saved.sessionsCompleted,
-          });
-        }
-      } else {
-        targetEndTimeRef.current = null;
-        isRunningRef.current = false;
-        setSecondsLeft(saved.secondsLeft);
-        setIsRunning(false);
-      }
+    const session = data as ActiveTimerSession | null;
+    if (!session) {
+      resetToWork();
+      return;
     }
 
-    requestNotificationPermission();
-    setInitialized(true);
-  }, []);
+    if (shouldDiscardActiveTimer(session, today)) {
+      await supabase.from("active_timer_sessions").delete().eq("user_id", userId);
+      toast.info("Old timer cleared");
+      resetToWork();
+      return;
+    }
+
+    const remaining = getActiveTimerRemainingSeconds(toSnapshot(session));
+    if (remaining <= 0) {
+      await completeWorkTimer(session);
+      return;
+    }
+
+    setActiveSession(session);
+    applyState("work", remaining, session.status === "running");
+  }, [applyState, completeWorkTimer, resetToWork, today, userId]);
 
   useEffect(() => {
-    if (!initialized) return;
+    const restoreTimer = window.setTimeout(() => {
+      void restoreActiveTimer();
+    }, 0);
 
-    const targetEndTime = isRunning
-      ? (targetEndTimeRef.current ?? null)
-      : null;
-
-    saveTimerState({
-      mode,
-      secondsLeft,
-      isRunning,
-      sessionsCompleted,
-      sessionStartTime: sessionStartTime?.toISOString() ?? null,
-      targetEndTime,
-      lastCompletedSessionKey: lastSavedSessionKeyRef.current,
-      savedAt: Date.now(),
-    });
-  }, [initialized, isRunning, mode, secondsLeft, sessionStartTime, sessionsCompleted]);
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.visibilityState !== "visible") return;
-      syncRunningTimer("background");
-    }
-
-    // On mobile PWA, pagehide fires reliably when iOS/Android is about
-    // to kill the page.  Force-save timer state so the next restore has
-    // an up-to-date targetEndTime instead of a stale one.
-    function handlePageHide() {
-      if (!isRunningRef.current || targetEndTimeRef.current === null) return;
-      const remaining = getRemainingSeconds(targetEndTimeRef.current);
-      saveTimerState({
-        mode: modeRef.current,
-        secondsLeft: remaining,
-        isRunning: true,
-        sessionsCompleted: sessionsCompletedRef.current,
-        sessionStartTime: sessionStartTimeRef.current?.toISOString() ?? null,
-        targetEndTime: targetEndTimeRef.current,
-        lastCompletedSessionKey: lastSavedSessionKeyRef.current,
-        savedAt: Date.now(),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", handlePageHide);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pagehide", handlePageHide);
-    };
-  }, [syncRunningTimer]);
-
-  const partnerMinutes = partnerDeepWork.reduce(
-    (sum, session) => sum + session.duration_minutes,
-    0,
-  );
-
-  const myProgress = Math.min((todayMinutes / DEEP_WORK_DAILY_TARGET) * 100, 100);
-  const partnerProgress = Math.min((partnerMinutes / DEEP_WORK_DAILY_TARGET) * 100, 100);
-
-  useEffect(() => {
-    if (todayMinutes < DEEP_WORK_DAILY_TARGET || hitTargetRef.current) return;
-
-    hitTargetRef.current = true;
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ["#f59e0b", "#ef4444", "#10b981"],
-    });
-  }, [todayMinutes]);
-
-  function getModeDuration(nextMode: TimerMode): number {
-    switch (nextMode) {
-      case "work":
-        return settings.workMinutes * 60;
-      case "break":
-        return settings.breakMinutes * 60;
-      case "longBreak":
-        return settings.longBreakMinutes * 60;
-    }
-  }
-
-  function updateSettings(newSettings: TimerSettings) {
-    setSettings(newSettings);
-    settingsRef.current = newSettings;
-    saveSettings(newSettings);
-
-    if (!isRunning) {
-      const newDuration = (() => {
-        switch (mode) {
-          case "work":
-            return newSettings.workMinutes * 60;
-          case "break":
-            return newSettings.breakMinutes * 60;
-          case "longBreak":
-            return newSettings.longBreakMinutes * 60;
-        }
-      })();
-
-      secondsLeftRef.current = newDuration;
-      setSecondsLeft(newDuration);
-    }
-  }
+    return () => window.clearTimeout(restoreTimer);
+  }, [restoreActiveTimer]);
 
   useEffect(() => {
     if (!isRunning) return;
 
-    intervalRef.current = setInterval(() => {
-      syncRunningTimer("active");
+    const interval = setInterval(() => {
+      if (mode === "work") {
+        const session = activeSessionRef.current;
+        if (!session) return;
+        const remaining = getActiveTimerRemainingSeconds(toSnapshot(session));
+        if (remaining <= 0) {
+          setSecondsLeft(0);
+          broadcastState("work", 0, false);
+          void completeWorkTimer(session);
+          return;
+        }
+        setSecondsLeft(remaining);
+        broadcastState("work", remaining, true);
+        return;
+      }
+
+      if (!breakTargetRef.current) return;
+      const remaining = Math.max(0, Math.ceil((breakTargetRef.current - Date.now()) / 1000));
+      if (remaining <= 0) {
+        breakTargetRef.current = null;
+        applyState("work", settings.workMinutes * 60, false);
+        return;
+      }
+      setSecondsLeft(remaining);
+      broadcastState(mode, remaining, true);
     }, 1000);
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isRunning, syncRunningTimer]);
+    return () => clearInterval(interval);
+  }, [applyState, broadcastState, completeWorkTimer, isRunning, mode, settings.workMinutes]);
 
-  async function handleStart() {
-    if (secondsLeftRef.current <= 0) {
-      finishTimer("active");
+  useEffect(() => {
+    if (!activeSession || activeSession.status !== "running") return;
+
+    const heartbeat = setInterval(() => {
+      void supabase
+        .from("active_timer_sessions")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("user_id", userId);
+    }, 30_000);
+
+    return () => clearInterval(heartbeat);
+  }, [activeSession, userId]);
+
+  async function startWorkTimer() {
+    const now = new Date().toISOString();
+
+    if (activeSession && activeSession.status === "paused") {
+      const { data, error } = await supabase
+        .from("active_timer_sessions")
+        .update({
+          status: "running",
+          last_started_at: now,
+          updated_at: now,
+          device_id: getDeviceId(),
+        })
+        .eq("user_id", userId)
+        .select()
+        .single();
+
+      if (error) {
+        toast.error("Failed to resume timer");
+        return;
+      }
+
+      const session = data as ActiveTimerSession;
+      setActiveSession(session);
+      applyState("work", getActiveTimerRemainingSeconds(toSnapshot(session)), true);
       return;
     }
 
-    // Acquire device lock for work sessions
-    if (modeRef.current === "work") {
-      const acquired = await acquireTimerLock();
-      if (!acquired) return;
-      startHeartbeat();
+    const plannedSeconds = settings.workMinutes * 60;
+    const { data, error } = await supabase
+      .from("active_timer_sessions")
+      .upsert(
+        {
+          user_id: userId,
+          session_date: today,
+          status: "running",
+          planned_seconds: plannedSeconds,
+          elapsed_seconds: 0,
+          last_started_at: now,
+          started_at: now,
+          device_id: getDeviceId(),
+          updated_at: now,
+        },
+        { onConflict: "user_id" },
+      )
+      .select()
+      .single();
+
+    if (error) {
+      toast.error("Failed to start timer");
+      return;
     }
 
-    if (modeRef.current === "work" && !sessionStartTimeRef.current) {
-      const startTime = new Date();
-      sessionStartTimeRef.current = startTime;
-      setSessionStartTime(startTime);
-      requestNotificationPermission();
-      lastSavedSessionKeyRef.current = null;
-    }
-
-    targetEndTimeRef.current = getTargetEndTime(secondsLeftRef.current);
-    isRunningRef.current = true;
-    setIsRunning(true);
-    primeAudioContext(audioContextRef);
-    broadcastState(secondsLeftRef.current, true, modeRef.current);
+    const session = data as ActiveTimerSession;
+    setActiveSession(session);
+    applyState("work", plannedSeconds, true);
   }
 
-  function handlePause() {
-    if (targetEndTimeRef.current !== null) {
-      const remaining = getRemainingSeconds(targetEndTimeRef.current);
-      if (remaining <= 0) {
-        finishTimer("active");
-        return;
+  async function pauseWorkTimer() {
+    const session = activeSessionRef.current;
+    if (!session) return;
+
+    const elapsedSeconds = getActiveTimerElapsedSeconds(toSnapshot(session));
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("active_timer_sessions")
+      .update({
+        status: "paused",
+        elapsed_seconds: elapsedSeconds,
+        last_started_at: null,
+        updated_at: now,
+      })
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) {
+      toast.error("Failed to pause timer");
+      return;
+    }
+
+    const pausedSession = data as ActiveTimerSession;
+    setActiveSession(pausedSession);
+    applyState("work", getActiveTimerRemainingSeconds(toSnapshot(pausedSession)), false);
+  }
+
+  async function stopWorkTimer() {
+    const session = activeSessionRef.current;
+    if (!session) {
+      resetToWork();
+      return;
+    }
+
+    const elapsedSeconds = getActiveTimerElapsedSeconds(toSnapshot(session));
+    await saveWorkSession(session, elapsedSeconds);
+    await releaseActiveTimer();
+    resetToWork();
+  }
+
+  function startBreakTimer() {
+    breakTargetRef.current = Date.now() + secondsLeft * 1000;
+    applyState(mode, secondsLeft, true);
+  }
+
+  function pauseBreakTimer() {
+    if (breakTargetRef.current) {
+      const remaining = Math.max(0, Math.ceil((breakTargetRef.current - Date.now()) / 1000));
+      breakTargetRef.current = null;
+      applyState(mode, remaining, false);
+    }
+  }
+
+  async function handleStartPause() {
+    if (mode === "work") {
+      if (isRunning) {
+        await pauseWorkTimer();
+      } else {
+        await startWorkTimer();
       }
-      secondsLeftRef.current = remaining;
-      setSecondsLeft(remaining);
+      return;
     }
 
-    targetEndTimeRef.current = null;
-    isRunningRef.current = false;
-    setIsRunning(false);
-    broadcastState(secondsLeftRef.current, false, modeRef.current);
+    if (isRunning) {
+      pauseBreakTimer();
+    } else {
+      startBreakTimer();
+    }
   }
 
-  function handleStop() {
-    // Sync remaining seconds from wall clock before clearing target so
-    // saveSession sees the accurate countdown value (excludes pause time).
-    if (targetEndTimeRef.current !== null) {
-      secondsLeftRef.current = getRemainingSeconds(targetEndTimeRef.current);
+  async function handleStop() {
+    if (mode === "work") {
+      await stopWorkTimer();
+    } else {
+      breakTargetRef.current = null;
+      applyState(mode, totalSeconds, false);
     }
-
-    targetEndTimeRef.current = null;
-    isRunningRef.current = false;
-    setIsRunning(false);
-
-    if (modeRef.current === "work" && sessionStartTimeRef.current) {
-      void saveSession();
-      void releaseTimerLock();
-    }
-
-    setSessionStartTime(null);
-    sessionStartTimeRef.current = null;
-    const newSeconds = getModeDuration(modeRef.current);
-    secondsLeftRef.current = newSeconds;
-    setSecondsLeft(newSeconds);
-    broadcastState(newSeconds, false, modeRef.current);
   }
 
-  function handleReset() {
-    if (targetEndTimeRef.current !== null) {
-      secondsLeftRef.current = getRemainingSeconds(targetEndTimeRef.current);
+  async function handleReset() {
+    if (mode === "work") {
+      await releaseActiveTimer();
+      resetToWork();
+      return;
     }
 
-    targetEndTimeRef.current = null;
-    isRunningRef.current = false;
-    setIsRunning(false);
-
-    if (modeRef.current === "work" && sessionStartTimeRef.current) {
-      void saveSession();
-      void releaseTimerLock();
-    }
-
-    setSessionStartTime(null);
-    sessionStartTimeRef.current = null;
-    const newSeconds = getModeDuration(modeRef.current);
-    secondsLeftRef.current = newSeconds;
-    setSecondsLeft(newSeconds);
-    broadcastState(newSeconds, false, modeRef.current);
+    breakTargetRef.current = null;
+    applyState(mode, totalSeconds, false);
   }
 
-  function switchMode(newMode: TimerMode) {
-    const wasRunning = isRunningRef.current;
-    if (targetEndTimeRef.current !== null) {
-      secondsLeftRef.current = getRemainingSeconds(targetEndTimeRef.current);
-    }
-    targetEndTimeRef.current = null;
-    isRunningRef.current = false;
-
-    if (modeRef.current === "work" && (wasRunning || sessionStartTimeRef.current)) {
-      void saveSession();
-      void releaseTimerLock();
+  function switchMode(nextMode: TimerMode) {
+    if (mode === "work" && activeSession) {
+      void stopWorkTimer();
     }
 
-    setIsRunning(false);
-    setSessionStartTime(null);
-    sessionStartTimeRef.current = null;
-    modeRef.current = newMode;
-    setMode(newMode);
-    const newSeconds = getModeDuration(newMode);
-    secondsLeftRef.current = newSeconds;
-    setSecondsLeft(newSeconds);
-    broadcastState(newSeconds, false, newMode);
+    breakTargetRef.current = null;
+    const nextSeconds =
+      nextMode === "work"
+        ? settings.workMinutes * 60
+        : nextMode === "longBreak"
+          ? settings.longBreakMinutes * 60
+          : settings.breakMinutes * 60;
+    setActiveSession(null);
+    applyState(nextMode, nextSeconds, false);
   }
 
-  const totalSeconds = getModeDuration(mode);
-  const isPaused = !isRunning && secondsLeft < totalSeconds;
-  const showStopButton = isPaused && mode === "work" && sessionStartTime !== null;
-  const isPartnerFocusing = partnerTimer?.isRunning && partnerTimer.mode === "work";
+  function updateSettings(nextSettings: TimerSettings) {
+    const cleanSettings = {
+      workMinutes: Math.min(240, Math.max(5, nextSettings.workMinutes)),
+      breakMinutes: Math.min(30, Math.max(1, nextSettings.breakMinutes)),
+      longBreakMinutes: Math.min(60, Math.max(5, nextSettings.longBreakMinutes)),
+    };
+    setSettings(cleanSettings);
+    saveSettings(cleanSettings);
+    if (!isRunning && mode === "work" && !activeSession) {
+      setSecondsLeft(cleanSettings.workMinutes * 60);
+      broadcastState("work", cleanSettings.workMinutes * 60, false);
+    }
+  }
 
   return (
-    <div className="space-y-4 lg:space-y-6">
-      <h1 className="font-display text-xl font-extrabold lg:text-2xl tracking-tight">Deep Work Timer</h1>
+    <div className="space-y-5 lg:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold tracking-tight">Deep Work Timer</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {formatMinutesToHours(todayMinutes)} logged today
+          </p>
+        </div>
+        <Badge variant="secondary" className="w-fit rounded-md bg-white/[0.06]">
+          {formatMinutesToHours(DEEP_WORK_DAILY_TARGET)} target
+        </Badge>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-        {/* Timer Card */}
-        <Card
-          className={cn(
-            "text-center lg:col-span-2 overflow-hidden",
-            mode === "work"
-              ? "border-flame/[0.12]"
-              : "border-emerald-400/[0.12]"
-          )}
-        >
-          {mode === "work" ? (
-            <div className="absolute inset-0 bg-gradient-to-b from-flame/[0.04] to-transparent pointer-events-none" />
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-b from-emerald-400/[0.04] to-transparent pointer-events-none" />
-          )}
-          <CardContent className="relative pt-6 lg:pt-8 space-y-6 lg:space-y-8">
-            {/* Mode Switcher + Settings */}
-            <div className="flex justify-center items-center gap-2">
-              <div className="inline-flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06]">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => switchMode("work")}
-                  className={cn(
-                    "rounded-lg text-xs transition-all",
-                    mode === "work"
-                      ? "bg-flame/[0.12] text-flame border border-flame/[0.15] shadow-sm"
-                      : "text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.04]"
-                  )}
-                >
-                  <Timer className="h-3 w-3 mr-1" />
-                  Focus
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => switchMode("break")}
-                  className={cn(
-                    "rounded-lg text-xs transition-all",
-                    mode === "break"
-                      ? "bg-emerald-400/[0.12] text-emerald-400 border border-emerald-400/[0.15] shadow-sm"
-                      : "text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.04]"
-                  )}
-                >
-                  <Coffee className="h-3 w-3 mr-1" />
-                  Break
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => switchMode("longBreak")}
-                  className={cn(
-                    "rounded-lg text-xs transition-all",
-                    mode === "longBreak"
-                      ? "bg-emerald-400/[0.12] text-emerald-400 border border-emerald-400/[0.15] shadow-sm"
-                      : "text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.04]"
-                  )}
-                >
-                  <Coffee className="h-3 w-3 mr-1" />
-                  Long Break
-                </Button>
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <Card className="overflow-hidden rounded-lg">
+          <CardContent className="space-y-7 pt-6 text-center lg:pt-8">
+            <div className="flex items-center justify-center gap-2">
+              <div className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
+                {(["work", "break", "longBreak"] as TimerMode[]).map((timerMode) => (
+                  <Button
+                    key={timerMode}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => switchMode(timerMode)}
+                    disabled={isRunning}
+                    className={cn(
+                      "rounded-md text-xs",
+                      mode === timerMode
+                        ? "bg-white/[0.12] text-foreground"
+                        : "text-muted-foreground hover:bg-white/[0.06]",
+                    )}
+                  >
+                    {timerMode === "work" ? (
+                      <Timer className="mr-1.5 h-3.5 w-3.5" />
+                    ) : (
+                      <Coffee className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    {timerMode === "longBreak" ? "Long" : timerMode === "break" ? "Break" : "Focus"}
+                  </Button>
+                ))}
               </div>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setShowSettings(!showSettings)}
-                disabled={isRunning}
-                className={cn(
-                  "h-8 w-8 rounded-lg transition-all",
-                  showSettings
-                    ? "bg-flame/[0.12] text-flame border border-flame/[0.15]"
-                    : "text-muted-foreground/40 hover:text-foreground hover:bg-white/[0.04]"
-                )}
+                onClick={() => setShowSettings((value) => !value)}
+                disabled={isRunning || Boolean(activeSession)}
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
               >
                 <Settings2 className="h-4 w-4" />
               </Button>
             </div>
 
-            {/* Custom Duration Settings */}
-            {showSettings && !isRunning && (
-              <div className="animate-slide-in mx-auto max-w-xs space-y-3 p-4 rounded-xl bg-white/[0.04] border border-white/[0.06]">
-                <div className="text-xs font-medium text-center text-muted-foreground/60 uppercase tracking-wider">Custom Durations</div>
-                {/* Work Duration */}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground/80">Focus</span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
-                      onClick={() => updateSettings({ ...settings, workMinutes: Math.max(5, settings.workMinutes - 5) })}
-                    >
-                      <Minus className="h-3 w-3" />
-                    </Button>
-                    <span className="text-sm font-mono font-medium w-12 text-center">{settings.workMinutes}m</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
-                      onClick={() => updateSettings({ ...settings, workMinutes: Math.min(240, settings.workMinutes + 5) })}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
+            {showSettings && !isRunning && !activeSession && (
+              <div className="mx-auto grid max-w-md gap-3 rounded-lg border border-white/[0.08] bg-white/[0.035] p-4 text-left sm:grid-cols-3">
+                {[
+                  { label: "Focus", key: "workMinutes" as const, step: 5 },
+                  { label: "Break", key: "breakMinutes" as const, step: 1 },
+                  { label: "Long", key: "longBreakMinutes" as const, step: 5 },
+                ].map((item) => (
+                  <div key={item.key} className="space-y-2">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {item.label}
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border border-white/[0.06] bg-white/[0.03] p-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-md"
+                        onClick={() => updateSettings({ ...settings, [item.key]: settings[item.key] - item.step })}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="w-12 text-center font-mono text-sm">{settings[item.key]}m</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-md"
+                        onClick={() => updateSettings({ ...settings, [item.key]: settings[item.key] + item.step })}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-                {/* Break Duration */}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground/80">Break</span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
-                      onClick={() => updateSettings({ ...settings, breakMinutes: Math.max(1, settings.breakMinutes - 1) })}
-                    >
-                      <Minus className="h-3 w-3" />
-                    </Button>
-                    <span className="text-sm font-mono font-medium w-12 text-center">{settings.breakMinutes}m</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
-                      onClick={() => updateSettings({ ...settings, breakMinutes: Math.min(30, settings.breakMinutes + 1) })}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-                {/* Long Break Duration */}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground/80">Long Break</span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
-                      onClick={() => updateSettings({ ...settings, longBreakMinutes: Math.max(5, settings.longBreakMinutes - 5) })}
-                    >
-                      <Minus className="h-3 w-3" />
-                    </Button>
-                    <span className="text-sm font-mono font-medium w-12 text-center">{settings.longBreakMinutes}m</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]"
-                      onClick={() => updateSettings({ ...settings, longBreakMinutes: Math.min(60, settings.longBreakMinutes + 5) })}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-                {/* Quick presets */}
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-[10px] rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground/60 hover:text-foreground"
-                    onClick={() => updateSettings({ workMinutes: 25, breakMinutes: 5, longBreakMinutes: 15 })}
-                  >
-                    25/5
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-[10px] rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground/60 hover:text-foreground"
-                    onClick={() => updateSettings({ workMinutes: 45, breakMinutes: 10, longBreakMinutes: 20 })}
-                  >
-                    45/10
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-[10px] rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground/60 hover:text-foreground"
-                    onClick={() => updateSettings({ workMinutes: 60, breakMinutes: 15, longBreakMinutes: 30 })}
-                  >
-                    60/15
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-[10px] rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground/60 hover:text-foreground"
-                    onClick={() => updateSettings({ workMinutes: 90, breakMinutes: 20, longBreakMinutes: 30 })}
-                  >
-                    90/20
-                  </Button>
-                </div>
+                ))}
               </div>
             )}
 
-            <div className="flex justify-center">
-              <TimerRing
-                secondsLeft={secondsLeft}
-                totalSeconds={totalSeconds}
-                mode={mode}
-                isRunning={isRunning}
-              />
-            </div>
+            <TimerRing
+              secondsLeft={secondsLeft}
+              totalSeconds={totalSeconds}
+              mode={mode}
+              isRunning={isRunning}
+            />
 
-            <div className="flex justify-center gap-3">
-              {isRunning ? (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handlePause}
-                  className="px-8 rounded-xl border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08]"
-                >
-                  <Pause className="h-5 w-5 mr-2" />
-                  Pause
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    size="lg"
-                    onClick={handleStart}
-                    className="px-8 rounded-xl bg-gradient-to-r from-flame to-orange-500 text-white shadow-lg shadow-flame/20 hover:shadow-flame/30 hover:brightness-110 transition-all"
-                  >
-                    <Play className="h-5 w-5 mr-2" />
+            <div className="flex flex-wrap justify-center gap-3">
+              <Button
+                size="lg"
+                onClick={handleStartPause}
+                className={cn(
+                  "rounded-lg px-8 text-white",
+                  isRunning
+                    ? "bg-white/[0.08] text-foreground hover:bg-white/[0.12]"
+                    : "bg-flame hover:bg-orange-500",
+                )}
+              >
+                {isRunning ? (
+                  <>
+                    <Pause className="mr-2 h-5 w-5" />
+                    Pause
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-5 w-5" />
                     {secondsLeft < totalSeconds ? "Resume" : "Start"}
-                  </Button>
-                  {showStopButton && (
-                    <Button
-                      size="lg"
-                      variant="outline"
-                      onClick={handleStop}
-                      className="px-6 rounded-xl border-red-500/20 bg-red-500/[0.06] hover:bg-red-500/[0.12] text-red-400"
-                    >
-                      <Square className="h-4 w-4 mr-2" />
-                      Stop
-                    </Button>
-                  )}
-                </>
-              )}
+                  </>
+                )}
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={handleStop}
+                className="rounded-lg px-6"
+              >
+                <Square className="mr-2 h-4 w-4" />
+                Stop
+              </Button>
               <Button
                 size="lg"
                 variant="ghost"
                 onClick={handleReset}
-                className="rounded-xl text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.04]"
+                className="rounded-lg text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
               >
                 <RotateCcw className="h-5 w-5" />
               </Button>
             </div>
-
-            <div className="text-sm text-muted-foreground/50 pb-2">
-              {sessionsCompleted} pomodoros completed today
-            </div>
           </CardContent>
         </Card>
 
-        {/* Right sidebar */}
         <div className="space-y-4">
-          {isPartnerFocusing && (
-            <Card className="border-flame/[0.15] animate-pulse-glow">
-              <CardContent className="py-3">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-lg bg-flame/[0.1] border border-flame/[0.15] flex items-center justify-center">
-                    <Timer className="h-4 w-4 text-flame" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-xs font-medium">
-                      {partner?.name ?? "Partner"} is focusing
-                    </div>
-                    <div className="text-xs text-muted-foreground/60">
-                      {formatTime(partnerTimer.secondsLeft)} left
-                    </div>
+          {isPartnerFocusing && partner && (
+            <Card className="rounded-lg border-flame/[0.16]">
+              <CardContent className="flex items-center gap-3 py-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-flame/[0.1] text-flame">
+                  <Timer className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">{partner.name} is focusing</div>
+                  <div className="text-xs text-muted-foreground">
+                    {formatTime(partnerTimer.secondsLeft)} left
                   </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          <Card>
+          <Card className="rounded-lg">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Daily Progress</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-sm">{me?.name ?? "You"}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {formatMinutesToHours(todayMinutes)} / 3h
-                    </span>
-                    {todayMinutes >= DEEP_WORK_DAILY_TARGET && (
-                      <CheckCircle2 className="h-4 w-4 text-success" />
-                    )}
-                  </div>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span>{me?.name ?? "You"}</span>
+                  <span className="font-semibold">
+                    {formatMinutesToHours(todayMinutes)}
+                  </span>
                 </div>
-                <Progress value={myProgress} variant="flame" className="h-2.5" />
+                <Progress value={myProgress} variant="flame" />
               </div>
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-sm">{partner?.name ?? "Partner"}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {formatMinutesToHours(partnerMinutes)} / 3h
-                    </span>
-                    {partnerMinutes >= DEEP_WORK_DAILY_TARGET && (
-                      <CheckCircle2 className="h-4 w-4 text-success" />
-                    )}
-                  </div>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span>{partner?.name ?? "Partner"}</span>
+                  <span className="font-semibold">
+                    {formatMinutesToHours(partnerMinutes)}
+                  </span>
                 </div>
-                <Progress value={partnerProgress} variant="partner" className="h-2.5" />
+                <Progress value={partnerProgress} variant="partner" />
               </div>
             </CardContent>
           </Card>
 
           {myDeepWork.length > 0 && (
-            <Card>
+            <Card className="rounded-lg">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Today&apos;s Sessions</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {myDeepWork.map((session) => (
-                    <div
-                      key={session.id}
-                      className="flex items-center justify-between text-sm py-1.5 px-2 rounded-lg bg-white/[0.03]"
-                    >
-                      <span className="text-muted-foreground/60">
-                        {new Date(session.started_at).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                      <Badge variant="secondary" className="bg-flame/[0.08] text-flame border-flame/[0.12] rounded-md">
-                        {formatMinutesToHours(session.duration_minutes)}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+              <CardContent className="space-y-2">
+                {myDeepWork.map((session) => (
+                  <div
+                    key={session.id}
+                    className="flex items-center justify-between rounded-md border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-sm"
+                  >
+                    <span className="text-muted-foreground">
+                      {new Date(session.started_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    <span className="flex items-center gap-1.5 font-semibold text-emerald-300">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {formatMinutesToHours(session.duration_minutes)}
+                    </span>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           )}
@@ -1365,17 +764,3 @@ export function TimerView({
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

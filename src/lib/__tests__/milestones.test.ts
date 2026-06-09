@@ -4,7 +4,6 @@ import {
   getNextMovieFoodDay,
   getDaysUntilMovieFood,
 } from "../milestones";
-import type { Milestone } from "../milestones";
 import { MOVIE_FOOD_INTERVAL } from "../constants";
 
 describe("milestones", () => {

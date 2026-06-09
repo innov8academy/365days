@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import useSWR, { mutate } from "swr";
 import { createClient } from "@/lib/supabase/client";
-import { getToday, getYesterday } from "@/lib/dates";
+import { getToday, getISTMonthRange } from "@/lib/dates";
 
 const supabase = createClient();
 
@@ -28,40 +28,10 @@ async function fetchTodayDeepWork() {
   return data ?? [];
 }
 
-async function fetchYesterdayTasks() {
-  const yesterday = getYesterday();
-  const { data } = await supabase
-    .from("daily_tasks")
-    .select("*")
-    .eq("date", yesterday)
-    .order("created_at");
-  return data ?? [];
-}
-
-async function fetchYesterdayDeepWork() {
-  const yesterday = getYesterday();
-  const { data } = await supabase
-    .from("deep_work_sessions")
-    .select("*")
-    .eq("date", yesterday)
-    .order("started_at", { ascending: false });
-  return data ?? [];
-}
-
 async function fetchStreak() {
   const { data } = await supabase
     .from("streaks")
     .select("*")
-    .limit(1)
-    .single();
-  return data;
-}
-
-async function fetchActiveCompetition() {
-  const { data } = await supabase
-    .from("competitions")
-    .select("*")
-    .eq("status", "active")
     .limit(1)
     .single();
   return data;
@@ -72,7 +42,7 @@ async function fetchSummaries() {
     .from("daily_summaries")
     .select("*")
     .order("date", { ascending: false })
-    .limit(200);
+    .limit(800);
   return data ?? [];
 }
 
@@ -85,20 +55,9 @@ async function fetchBreaks() {
   return data ?? [];
 }
 
-async function fetchAchievements() {
-  const { data } = await supabase
-    .from("user_achievements")
-    .select("*")
-    .order("earned_at", { ascending: false });
-  return data ?? [];
-}
-
 async function fetchMorningPasses() {
   const today = getToday();
-  const monthStart = today.slice(0, 7) + "-01";
-  // Last day of current month
-  const [y, m] = today.split("-").map(Number);
-  const monthEnd = new Date(y, m, 0).toISOString().split("T")[0];
+  const { start: monthStart, end: monthEnd } = getISTMonthRange(today);
   const { data } = await supabase
     .from("morning_passes")
     .select("*")
@@ -122,20 +81,8 @@ export function useTodayDeepWork() {
   return useSWR("today-deepwork", fetchTodayDeepWork, swrOptions);
 }
 
-export function useYesterdayTasks() {
-  return useSWR("yesterday-tasks", fetchYesterdayTasks, swrOptions);
-}
-
-export function useYesterdayDeepWork() {
-  return useSWR("yesterday-deepwork", fetchYesterdayDeepWork, swrOptions);
-}
-
 export function useStreak() {
   return useSWR("streak", fetchStreak, swrOptions);
-}
-
-export function useActiveCompetition() {
-  return useSWR("active-competition", fetchActiveCompetition, swrOptions);
 }
 
 export function useSummaries() {
@@ -146,41 +93,8 @@ export function useBreaks() {
   return useSWR("breaks", fetchBreaks, swrOptions);
 }
 
-export function useAchievements() {
-  return useSWR("achievements", fetchAchievements, swrOptions);
-}
-
 export function useMorningPasses() {
   return useSWR("morning-passes", fetchMorningPasses, swrOptions);
-}
-
-// Auto-trigger daily summary for yesterday if summary or streak is stale
-export function useGapFiller() {
-  const triggered = useRef(false);
-  const { data: summaries } = useSummaries();
-  const { data: streak } = useStreak();
-
-  useEffect(() => {
-    if (triggered.current || !summaries || !streak) return;
-
-    const yesterday = getYesterday();
-    const hasYesterdaySummary = summaries.some((s) => s.date === yesterday);
-    const streakUpToDate = streak.last_active_date >= yesterday;
-
-    if (!hasYesterdaySummary || !streakUpToDate) {
-      triggered.current = true;
-      fetch("/api/admin/trigger-cron", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: yesterday }),
-      }).then(() => {
-        mutate("summaries");
-        mutate("streak");
-      }).catch(() => {
-        triggered.current = false;
-      });
-    }
-  }, [summaries, streak]);
 }
 
 // Real-time subscription: auto-revalidate SWR caches when DB changes
@@ -218,23 +132,9 @@ export function useRealtimeSync() {
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "competitions" },
-        () => {
-          mutate("active-competition");
-        }
-      )
-      .on(
-        "postgres_changes",
         { event: "*", schema: "public", table: "breaks" },
         () => {
           mutate("breaks");
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "user_achievements" },
-        () => {
-          mutate("achievements");
         }
       )
       .on(

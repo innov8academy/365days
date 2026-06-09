@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BadgeCard } from "@/components/badges/badge-card";
-import { ACHIEVEMENTS, type AchievementDef } from "@/lib/achievements";
+import { ACHIEVEMENTS } from "@/lib/achievements";
 import type { UserAchievement } from "@/types/database";
 
 interface BadgeGridProps {

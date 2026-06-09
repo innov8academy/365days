@@ -14,8 +14,7 @@ export async function awardAchievements(
   deepWorkMinutes: number,
   streakCount: number,
   tasksTotal: number,
-  tasksCompleted: number,
-  streakTransition?: { from: string; to: string }
+  tasksCompleted: number
 ) {
   const toInsert: InsertRow[] = [];
 
@@ -74,7 +73,7 @@ export async function awardAchievements(
   await checkConsistency(supabase, userId, toInsert);
 
   // --- Category H: Comeback & Resilience (mixed) ---
-  await checkResilience(supabase, userId, date, streakCount, tasksTotal, tasksCompleted, toInsert, streakTransition);
+  await checkResilience(supabase, userId, date, streakCount, tasksTotal, tasksCompleted, toInsert);
 
   // --- Category I: Session Mastery (mixed) ---
   await checkSession(supabase, userId, date, toInsert);
@@ -429,8 +428,7 @@ async function checkResilience(
   streakCount: number,
   tasksTotal: number,
   tasksCompleted: number,
-  toInsert: InsertRow[],
-  streakTransition?: { from: string; to: string }
+  toInsert: InsertRow[]
 ) {
   // Bounce Back: perfect today after imperfect yesterday
   if (tasksTotal > 0 && tasksCompleted === tasksTotal) {
@@ -456,13 +454,6 @@ async function checkResilience(
   // Comeback Kid: streak >= 7 AND has had a previous streak break
   // Phoenix Rising: streak >= 30 AND has had a previous break
   if (streakCount >= 7) {
-    const { data: streakData } = await supabase
-      .from("streaks")
-      .select("longest_count")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    // If longest_count > current streak, it means there was a previous higher streak that broke
     // Also check if there are any gap days in summaries (days without streak_maintained)
     const { count: totalSummaries } = await supabase
       .from("daily_summaries")

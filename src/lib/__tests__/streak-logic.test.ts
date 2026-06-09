@@ -10,7 +10,7 @@ import type { Streak } from "@/types/database";
  * Tests for streak-related business logic:
  * - Progress calculations
  * - Status determination
- * - Recovery mode behavior
+ * - Legacy recovery compatibility
  * - Target thresholds
  */
 
@@ -29,50 +29,50 @@ function hasHitTarget(minutes: number, target: number): boolean {
 
 describe("streak logic", () => {
   describe("target calculation", () => {
-    it("normal target is 180 minutes (3 hours)", () => {
-      expect(getTarget(false)).toBe(180);
+    it("normal target is 240 minutes (4 hours)", () => {
+      expect(getTarget(false)).toBe(240);
     });
 
-    it("recovery target is 270 minutes (4.5 hours)", () => {
-      expect(getTarget(true)).toBe(270);
+    it("legacy recovery target is retained as 360 minutes", () => {
+      expect(getTarget(true)).toBe(360);
     });
 
-    it("recovery target is 1.5x normal", () => {
-      expect(getTarget(true)).toBe(getTarget(false) * 1.5);
+    it("legacy recovery target is above normal", () => {
+      expect(getTarget(true)).toBeGreaterThan(getTarget(false));
     });
   });
 
   describe("progress calculation", () => {
     it("returns 0% for 0 minutes", () => {
-      expect(calculateProgress(0, 180)).toBe(0);
+      expect(calculateProgress(0, 240)).toBe(0);
     });
 
     it("returns 50% for half the target", () => {
-      expect(calculateProgress(90, 180)).toBeCloseTo(50);
+      expect(calculateProgress(120, 240)).toBeCloseTo(50);
     });
 
     it("returns 100% at the target", () => {
-      expect(calculateProgress(180, 180)).toBe(100);
+      expect(calculateProgress(240, 240)).toBe(100);
     });
 
     it("caps at 100% for above target", () => {
-      expect(calculateProgress(300, 180)).toBe(100);
+      expect(calculateProgress(300, 240)).toBe(100);
     });
 
-    it("caps at 100% for recovery target", () => {
-      expect(calculateProgress(500, 270)).toBe(100);
+    it("caps at 100% for legacy recovery target", () => {
+      expect(calculateProgress(500, 360)).toBe(100);
     });
 
-    it("returns correct percentage for recovery mode", () => {
-      expect(calculateProgress(135, 270)).toBeCloseTo(50);
+    it("returns correct percentage for legacy recovery mode", () => {
+      expect(calculateProgress(180, 360)).toBeCloseTo(50);
     });
 
     it("never returns negative", () => {
-      expect(calculateProgress(0, 180)).toBeGreaterThanOrEqual(0);
+      expect(calculateProgress(0, 240)).toBeGreaterThanOrEqual(0);
     });
 
     it("handles very small amounts", () => {
-      const result = calculateProgress(1, 180);
+      const result = calculateProgress(1, 240);
       expect(result).toBeGreaterThan(0);
       expect(result).toBeLessThan(1);
     });
@@ -80,24 +80,24 @@ describe("streak logic", () => {
 
   describe("hit target check", () => {
     it("returns true at exactly the target", () => {
-      expect(hasHitTarget(180, 180)).toBe(true);
+      expect(hasHitTarget(240, 240)).toBe(true);
     });
 
     it("returns true above target", () => {
-      expect(hasHitTarget(200, 180)).toBe(true);
+      expect(hasHitTarget(260, 240)).toBe(true);
     });
 
     it("returns false below target", () => {
-      expect(hasHitTarget(179, 180)).toBe(false);
+      expect(hasHitTarget(239, 240)).toBe(false);
     });
 
     it("returns false at 0 minutes", () => {
-      expect(hasHitTarget(0, 180)).toBe(false);
+      expect(hasHitTarget(0, 240)).toBe(false);
     });
 
-    it("works with recovery target", () => {
-      expect(hasHitTarget(270, 270)).toBe(true);
-      expect(hasHitTarget(269, 270)).toBe(false);
+    it("works with the 8h high-work threshold separately", () => {
+      expect(hasHitTarget(480, 480)).toBe(true);
+      expect(hasHitTarget(479, 480)).toBe(false);
     });
   });
 
@@ -114,10 +114,10 @@ describe("streak logic", () => {
         updated_at: "2025-01-10T00:00:00Z",
       };
       expect(streak.status).toBe("active");
-      expect(getTarget(streak.status === "recovery")).toBe(180);
+      expect(getTarget(streak.status === "recovery")).toBe(240);
     });
 
-    it("recovery streak has higher target", () => {
+    it("legacy recovery streak still has a compatibility target", () => {
       const streak: Streak = {
         id: "1",
         current_count: 10,
@@ -129,7 +129,7 @@ describe("streak logic", () => {
         updated_at: "2025-01-10T00:00:00Z",
       };
       expect(streak.status).toBe("recovery");
-      expect(getTarget(streak.status === "recovery")).toBe(270);
+      expect(getTarget(streak.status === "recovery")).toBe(360);
     });
 
     it("broken streak still uses normal target calculations", () => {
@@ -144,7 +144,7 @@ describe("streak logic", () => {
         updated_at: "2025-01-10T00:00:00Z",
       };
       expect(streak.status).toBe("broken");
-      expect(getTarget(streak.status === "recovery")).toBe(180);
+      expect(getTarget(streak.status === "recovery")).toBe(240);
     });
 
     it("recovery has days remaining within recovery period limit", () => {
@@ -195,7 +195,7 @@ describe("streak logic", () => {
     });
 
     it("null streak defaults to 0 for display", () => {
-      const streak: Streak | null = null;
+      const streak = null as Streak | null;
       const currentStreak = streak?.current_count ?? 0;
       const bestStreak = streak?.best_count ?? 0;
       expect(currentStreak).toBe(0);

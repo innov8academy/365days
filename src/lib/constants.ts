@@ -7,8 +7,8 @@ export const POINTS_DEEP_WORK_BONUS_THRESHOLD = 240; // 4 hours in minutes
 export const POINTS_STREAK_BONUS = 1;
 
 // Deep work
-export const DEEP_WORK_DAILY_TARGET = 180; // 3 hours in minutes
-export const DEEP_WORK_RECOVERY_TARGET = 270; // 4.5 hours (1.5x) in minutes
+export const DEEP_WORK_DAILY_TARGET = 240; // 4 hours in minutes
+export const DEEP_WORK_RECOVERY_TARGET = 360; // Deprecated: recovery mode is no longer used
 
 // Pomodoro defaults
 export const POMODORO_WORK_MINUTES = 25;

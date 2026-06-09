@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { BadgeCard } from "@/components/badges/badge-card";
 import { EquippedBadge } from "@/components/badges/equipped-badge";
@@ -14,8 +13,6 @@ import {
   CATEGORY_DESCRIPTIONS,
   TIER_CONFIG,
   EVOLUTION_THRESHOLDS,
-  getEvolutionTier,
-  getNextEvolution,
   getAchievementsByCategory,
   type AchievementCategory,
 } from "@/lib/achievements";
@@ -60,7 +57,6 @@ export function AchievementsView({
   const [equippedBadge, setEquippedBadge] = useState<string | null>(myEquippedBadge ?? null);
   const [equipping, setEquipping] = useState(false);
   const currentUserId = viewUser === "me" ? me?.id : partner?.id;
-  const currentUserName = viewUser === "me" ? (me?.name ?? "You") : (partner?.name ?? "Partner");
   const supabase = createClient();
 
   async function handleEquipBadge(achievementId: string) {

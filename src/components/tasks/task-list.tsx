@@ -1,15 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import confetti from "canvas-confetti";
 import type { DailyTask } from "@/types/database";
-import { checkAchievementsLive } from "@/lib/check-achievements-live";
 
 interface TaskListProps {
   tasks: DailyTask[];
@@ -27,15 +25,6 @@ export function TaskList({
   const supabase = createClient();
   const [animatingId, setAnimatingId] = useState<string | null>(null);
 
-  const fireConfetti = useCallback(() => {
-    confetti({
-      particleCount: 80,
-      spread: 60,
-      origin: { y: 0.7 },
-      colors: ["#f59e0b", "#ef4444", "#10b981", "#8b5cf6"],
-    });
-  }, []);
-
   async function toggleTask(task: DailyTask) {
     if (!isOwner) return;
     const newCompleted = !task.completed;
@@ -46,15 +35,6 @@ export function TaskList({
     }
 
     onTaskToggled(task.id, newCompleted);
-
-    if (newCompleted) {
-      const allDone = tasks.every((t) =>
-        t.id === task.id ? true : t.completed
-      );
-      if (allDone && tasks.length > 0) {
-        setTimeout(fireConfetti, 200);
-      }
-    }
 
     const { error } = await supabase
       .from("daily_tasks")
@@ -67,9 +47,6 @@ export function TaskList({
     if (error) {
       onTaskToggled(task.id, !newCompleted);
       toast.error("Failed to update task");
-    } else if (newCompleted) {
-      // Check and award task achievements in real-time
-      checkAchievementsLive(supabase, task.user_id, "task_complete").catch(() => {});
     }
   }
 

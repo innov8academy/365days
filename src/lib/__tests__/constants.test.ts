@@ -66,24 +66,22 @@ describe("constants", () => {
   });
 
   describe("deep work targets", () => {
-    it("daily target is 3 hours in minutes", () => {
-      expect(DEEP_WORK_DAILY_TARGET).toBe(180);
-      expect(DEEP_WORK_DAILY_TARGET).toBe(3 * 60);
+    it("daily target is 4 hours in minutes", () => {
+      expect(DEEP_WORK_DAILY_TARGET).toBe(240);
+      expect(DEEP_WORK_DAILY_TARGET).toBe(4 * 60);
     });
 
-    it("recovery target is 4.5 hours in minutes (1.5x daily)", () => {
-      expect(DEEP_WORK_RECOVERY_TARGET).toBe(270);
-      expect(DEEP_WORK_RECOVERY_TARGET).toBe(4.5 * 60);
+    it("recovery target is retained only as a deprecated compatibility constant", () => {
+      expect(DEEP_WORK_RECOVERY_TARGET).toBe(360);
+      expect(DEEP_WORK_RECOVERY_TARGET).toBe(6 * 60);
     });
 
-    it("recovery target is exactly 1.5x daily target", () => {
-      expect(DEEP_WORK_RECOVERY_TARGET).toBe(DEEP_WORK_DAILY_TARGET * 1.5);
+    it("recovery target is not used as the streak target", () => {
+      expect(DEEP_WORK_RECOVERY_TARGET).toBeGreaterThan(DEEP_WORK_DAILY_TARGET);
     });
 
-    it("deep work bonus threshold is higher than daily target", () => {
-      expect(POINTS_DEEP_WORK_BONUS_THRESHOLD).toBeGreaterThan(
-        DEEP_WORK_DAILY_TARGET
-      );
+    it("deep work bonus threshold matches the daily target for compatibility", () => {
+      expect(POINTS_DEEP_WORK_BONUS_THRESHOLD).toBe(DEEP_WORK_DAILY_TARGET);
     });
   });
 

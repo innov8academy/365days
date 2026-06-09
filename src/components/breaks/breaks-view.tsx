@@ -24,7 +24,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format, addDays } from "date-fns";
+import { format } from "date-fns";
+import { addDaysToDateString, getToday } from "@/lib/dates";
 import {
   MAX_MUTUAL_BREAK_DAYS,
   MAX_EMERGENCY_BREAK_DAYS,
@@ -74,11 +75,8 @@ export function BreaksView({
   async function requestBreak() {
     setCreating(true);
     try {
-      const startDate = format(new Date(), "yyyy-MM-dd");
-      const endDate = format(
-        addDays(new Date(), parseInt(days) - 1),
-        "yyyy-MM-dd"
-      );
+      const startDate = getToday();
+      const endDate = addDaysToDateString(startDate, parseInt(days) - 1);
 
       const { data, error } = await supabase
         .from("breaks")
@@ -198,7 +196,7 @@ export function BreaksView({
               <div className="space-y-2">
                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Break Type</Label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(["mutual", "emergency", "solo"] as BreakType[]).map(
+                  {(["mutual", "emergency"] as BreakType[]).map(
                     (type) => (
                       <Button
                         key={type}
@@ -222,11 +220,9 @@ export function BreaksView({
                 </div>
                 <p className="text-xs text-muted-foreground/50">
                   {breakType === "mutual" &&
-                    "Both agree. Streak paused for both."}
+                    "Partner approval. Streak freezes for both."}
                   {breakType === "emergency" &&
-                    "No approval needed. Max 2/month."}
-                  {breakType === "solo" &&
-                    "1 day only. Partner's streak continues. Max 2/month."}
+                    "No approval needed. Streak freezes for both."}
                 </p>
               </div>
               <div className="space-y-2">
@@ -414,13 +410,13 @@ export function BreaksView({
         </CardContent>
       </Card>
 
-      {/* Break Rules (collapsible) */}
+      {/* Break notes (collapsible) */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Break Rules</CardTitle>
+            <CardTitle className="text-base">Break Notes</CardTitle>
             <Button variant="ghost" size="sm" onClick={() => setShowRules(!showRules)} className="text-xs text-muted-foreground hover:text-foreground rounded-lg">
-              {showRules ? "Hide Rules" : "Show Rules"}
+              {showRules ? "Hide" : "Show"}
             </Button>
           </div>
         </CardHeader>
@@ -428,19 +424,11 @@ export function BreaksView({
           <CardContent className="space-y-3 text-sm text-muted-foreground/60">
             <p>
               <strong className="text-foreground/90">Mutual:</strong> Both agree.
-              Streak paused for both. 1-3 days.
+              Streak freezes for both. 1-3 days.
             </p>
             <p>
               <strong className="text-foreground/90">Emergency:</strong> No approval
-              needed. Streak paused. 1-7 days. Max 2/month.
-            </p>
-            <p>
-              <strong className="text-foreground/90">Solo Pause:</strong> 1 day only.
-              Partner&apos;s streak continues. 0 points. Max 2/month.
-            </p>
-            <p className="text-xs text-muted-foreground/40">
-              Break days don&apos;t count toward the 30-day competition (cycle
-              extends).
+              needed. Streak freezes for both. 1-7 days.
             </p>
           </CardContent>
         )}

@@ -7,23 +7,16 @@ import {
   LayoutDashboard,
   ListTodo,
   Timer,
-  Flame,
-  Trophy,
   Coffee,
-  Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PresenceIndicator } from "@/components/shared/presence-indicator";
 import type { PresenceStatus } from "@/components/shared/presence-indicator";
-import { EquippedBadge } from "@/components/badges/equipped-badge";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/timer", label: "Deep Work", icon: Timer },
-  { href: "/streak", label: "Streak", icon: Flame },
-  { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
-  { href: "/achievements", label: "Achievements", icon: Award },
   { href: "/breaks", label: "Breaks", icon: Coffee },
 ];
 
@@ -31,14 +24,12 @@ interface SidebarNavProps {
   partnerName?: string;
   partnerPresence?: PresenceStatus;
   partnerLastSeen?: string | null;
-  partnerEquippedBadge?: string | null;
 }
 
 export function SidebarNav({
   partnerName,
   partnerPresence = "offline",
   partnerLastSeen,
-  partnerEquippedBadge,
 }: SidebarNavProps) {
   const pathname = usePathname();
 
@@ -113,7 +104,6 @@ export function SidebarNav({
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium truncate flex items-center gap-1.5">
               {partnerName ?? "Partner"}
-              <EquippedBadge achievementId={partnerEquippedBadge} />
             </div>
             <PresenceIndicator status={partnerPresence} showLabel lastSeen={partnerLastSeen} size="sm" />
           </div>

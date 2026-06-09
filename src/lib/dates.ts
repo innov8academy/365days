@@ -1,20 +1,48 @@
-import { format, isToday, isYesterday, startOfDay } from "date-fns";
+import { format } from "date-fns";
 
-export function getToday(): string {
-  return format(new Date(), "yyyy-MM-dd");
+const IST_OFFSET_MINUTES = 330;
+const IST_OFFSET_MS = IST_OFFSET_MINUTES * 60 * 1000;
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
-export function getYesterday(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return format(d, "yyyy-MM-dd");
+function parseDateString(date: string): { year: number; month: number; day: number } {
+  const match = DATE_RE.exec(date);
+  if (!match) {
+    throw new Error(`Invalid date string: ${date}`);
+  }
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+}
+
+export function getToday(now: Date = new Date()): string {
+  const ist = new Date(now.getTime() + IST_OFFSET_MS);
+  return `${ist.getUTCFullYear()}-${pad2(ist.getUTCMonth() + 1)}-${pad2(ist.getUTCDate())}`;
+}
+
+export function addDaysToDateString(date: string, days: number): string {
+  const { year, month, day } = parseDateString(date);
+  const utc = Date.UTC(year, month - 1, day + days);
+  const result = new Date(utc);
+  return `${result.getUTCFullYear()}-${pad2(result.getUTCMonth() + 1)}-${pad2(result.getUTCDate())}`;
+}
+
+export function getYesterday(now: Date = new Date()): string {
+  return addDaysToDateString(getToday(now), -1);
 }
 
 export function formatDate(date: string): string {
-  const d = new Date(date + "T00:00:00");
-  if (isToday(d)) return "Today";
-  if (isYesterday(d)) return "Yesterday";
-  return format(d, "MMM d, yyyy");
+  if (date === getToday()) return "Today";
+  if (date === getYesterday()) return "Yesterday";
+
+  const { year, month, day } = parseDateString(date);
+  return format(new Date(Date.UTC(year, month - 1, day)), "MMM d, yyyy");
 }
 
 export function formatTime(seconds: number): string {
@@ -35,12 +63,26 @@ export function formatMinutesToHours(minutes: number): string {
   return `${hrs}h ${mins}m`;
 }
 
-/** Check if a date string (YYYY-MM-DD) falls on a Sunday — weekly free day */
+/** Check if a date string (YYYY-MM-DD) falls on a Sunday in the IST calendar. */
 export function isSunday(dateStr: string): boolean {
-  return new Date(dateStr + "T00:00:00").getDay() === 0;
+  const { year, month, day } = parseDateString(dateStr);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 0;
 }
 
 export function getDayStart(date?: string): Date {
-  if (date) return startOfDay(new Date(date + "T00:00:00"));
-  return startOfDay(new Date());
+  const targetDate = date ?? getToday();
+  const { year, month, day } = parseDateString(targetDate);
+  return new Date(Date.UTC(year, month - 1, day) - IST_OFFSET_MS);
+}
+
+export function getISTMonthRange(date = getToday()): { start: string; end: string } {
+  const { year, month } = parseDateString(date);
+  const start = `${year}-${pad2(month)}-01`;
+  const endDate = new Date(Date.UTC(year, month, 0));
+  const end = `${endDate.getUTCFullYear()}-${pad2(endDate.getUTCMonth() + 1)}-${pad2(endDate.getUTCDate())}`;
+  return { start, end };
+}
+
+export function getISTYear(date = getToday()): number {
+  return parseDateString(date).year;
 }

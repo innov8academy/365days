@@ -60,12 +60,12 @@ export function TasksView({
     myTotal > 0 && myCompleted === myTotal ? (
       <Badge className="bg-success/[0.12] text-success border-success/[0.2] rounded-lg">
         <CheckCircle2 className="h-3 w-3 mr-1" />
-        All Done! +10pts
+        All Done
       </Badge>
     ) : myTotal > 0 ? (
       <Badge variant="secondary" className="rounded-lg bg-white/[0.06] border-white/[0.08]">
         <XCircle className="h-3 w-3 mr-1" />
-        {myCompleted}/{myTotal} — 0pts
+        {myCompleted}/{myTotal}
       </Badge>
     ) : null;
 
@@ -148,12 +148,12 @@ export function TasksView({
                 {partnerTotal > 0 && partnerCompleted === partnerTotal ? (
                   <Badge className="bg-success/[0.12] text-success border-success/[0.2] rounded-lg">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
-                    +10pts
+                    Done
                   </Badge>
                 ) : partnerTotal > 0 ? (
                   <Badge variant="secondary" className="rounded-lg bg-white/[0.06] border-white/[0.08]">
                     <XCircle className="h-3 w-3 mr-1" />
-                    0pts
+                    Open
                   </Badge>
                 ) : null}
               </div>
@@ -210,14 +210,14 @@ function PartnerTaskSection({
             <div className="flex items-center gap-2 text-success">
               <CheckCircle2 className="h-4 w-4" />
               <span className="text-sm font-medium">
-                All tasks completed! +10pts
+                All tasks completed
               </span>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-muted-foreground/60">
               <XCircle className="h-4 w-4" />
               <span className="text-sm">
-                {partnerCompleted}/{partnerTotal} completed — 0pts
+                {partnerCompleted}/{partnerTotal} completed
               </span>
             </div>
           )}

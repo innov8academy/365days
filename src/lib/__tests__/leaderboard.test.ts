@@ -2,11 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_POOL_AMOUNT,
   COMPETITION_DURATION_DAYS,
-  POINTS_FULL_COMPLETION,
-  POINTS_NO_TASKS_PENALTY,
-  POINTS_DEEP_WORK_BONUS,
-  POINTS_DEEP_WORK_BONUS_THRESHOLD,
-  POINTS_STREAK_BONUS,
 } from "../constants";
 import { calculateDailyPoints } from "../points";
 import type { Competition, DailySummary } from "@/types/database";
@@ -84,6 +79,8 @@ describe("leaderboard / competition", () => {
       points_earned: points,
       deep_work_minutes: 200,
       streak_maintained: true,
+      target_minutes: 240,
+      is_break_day: false,
     });
 
     it("includes summaries within competition range", () => {
@@ -137,6 +134,8 @@ describe("leaderboard / competition", () => {
       points_earned: points,
       deep_work_minutes: 200,
       streak_maintained: true,
+      target_minutes: 240,
+      is_break_day: false,
     });
 
     it("sums up all points from summaries", () => {
@@ -195,6 +194,8 @@ describe("leaderboard / competition", () => {
       points_earned: 0,
       deep_work_minutes: 0,
       streak_maintained: true,
+      target_minutes: 240,
+      is_break_day: false,
     });
 
     it("counts days with all tasks completed", () => {
